@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthenticatedDasborRouteImport } from './routes/_authenticated/dasbor'
+import { Route as AuthenticatedEksporRouteImport } from './routes/_authenticated/ekspor'
 import { Route as AuthenticatedPenggunaRouteImport } from './routes/_authenticated/pengguna'
 import { Route as AuthenticatedPenugasanRouteImport } from './routes/_authenticated/penugasan'
 import { Route as AuthenticatedPemeriksaanIndexRouteImport } from './routes/_authenticated/pemeriksaan.index'
@@ -31,6 +32,11 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
 const AuthenticatedDasborRoute = AuthenticatedDasborRouteImport.update({
   id: '/dasbor',
   path: '/dasbor',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedEksporRoute = AuthenticatedEksporRouteImport.update({
+  id: '/ekspor',
+  path: '/ekspor',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedPenggunaRoute = AuthenticatedPenggunaRouteImport.update({
@@ -71,6 +77,7 @@ const AuthenticatedPemeriksaanJenisIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dasbor': typeof AuthenticatedDasborRoute
+  '/ekspor': typeof AuthenticatedEksporRoute
   '/pengguna': typeof AuthenticatedPenggunaRoute
   '/penugasan': typeof AuthenticatedPenugasanRoute
   '/terjemahan/$tableId': typeof AuthenticatedTerjemahanTableIdRoute
@@ -81,6 +88,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dasbor': typeof AuthenticatedDasborRoute
+  '/ekspor': typeof AuthenticatedEksporRoute
   '/pengguna': typeof AuthenticatedPenggunaRoute
   '/penugasan': typeof AuthenticatedPenugasanRoute
   '/terjemahan/$tableId': typeof AuthenticatedTerjemahanTableIdRoute
@@ -93,6 +101,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/_authenticated/dasbor': typeof AuthenticatedDasborRoute
+  '/_authenticated/ekspor': typeof AuthenticatedEksporRoute
   '/_authenticated/pengguna': typeof AuthenticatedPenggunaRoute
   '/_authenticated/penugasan': typeof AuthenticatedPenugasanRoute
   '/_authenticated/terjemahan/$tableId': typeof AuthenticatedTerjemahanTableIdRoute
@@ -105,6 +114,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/dasbor'
+    | '/ekspor'
     | '/pengguna'
     | '/penugasan'
     | '/terjemahan/$tableId'
@@ -115,6 +125,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/dasbor'
+    | '/ekspor'
     | '/pengguna'
     | '/penugasan'
     | '/terjemahan/$tableId'
@@ -126,6 +137,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/_authenticated/dasbor'
+    | '/_authenticated/ekspor'
     | '/_authenticated/pengguna'
     | '/_authenticated/penugasan'
     | '/_authenticated/terjemahan/$tableId'
@@ -160,6 +172,13 @@ declare module '@tanstack/react-router' {
       path: '/dasbor'
       fullPath: '/dasbor'
       preLoaderRoute: typeof AuthenticatedDasborRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/ekspor': {
+      id: '/_authenticated/ekspor'
+      path: '/ekspor'
+      fullPath: '/ekspor'
+      preLoaderRoute: typeof AuthenticatedEksporRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/pengguna': {
@@ -209,6 +228,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDasborRoute: typeof AuthenticatedDasborRoute
+  AuthenticatedEksporRoute: typeof AuthenticatedEksporRoute
   AuthenticatedPenggunaRoute: typeof AuthenticatedPenggunaRoute
   AuthenticatedPenugasanRoute: typeof AuthenticatedPenugasanRoute
   AuthenticatedTerjemahanTableIdRoute: typeof AuthenticatedTerjemahanTableIdRoute
@@ -219,6 +239,7 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDasborRoute: AuthenticatedDasborRoute,
+  AuthenticatedEksporRoute: AuthenticatedEksporRoute,
   AuthenticatedPenggunaRoute: AuthenticatedPenggunaRoute,
   AuthenticatedPenugasanRoute: AuthenticatedPenugasanRoute,
   AuthenticatedTerjemahanTableIdRoute: AuthenticatedTerjemahanTableIdRoute,

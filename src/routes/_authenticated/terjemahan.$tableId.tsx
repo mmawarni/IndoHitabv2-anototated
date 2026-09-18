@@ -33,8 +33,8 @@ type PairDraft = Record<string, { question: string; answer: string }>;
 
 function TranslationWorkspace() {
   const { tableId } = Route.useParams();
-  const { userId, isAdmin, isAnotator, rolesLoading, rolesError } = useCurrentUser();
-  const allowed = isAdmin || isAnotator;
+  const { userId, isAdmin, isAnotator, isValidator, rolesLoading, rolesError } = useCurrentUser();
+  const allowed = isAdmin || isAnotator || isValidator;
   const queryClient = useQueryClient();
 
   const [cellDrafts, setCellDrafts] = useState<CellDraft>({});
@@ -62,7 +62,7 @@ function TranslationWorkspace() {
         supabase
           .from("qa_pairs")
           .select("id, position, question_en, answer_en, question_id, answer_id, status, original_qa, original_question_id, annotate_flag, annotator_id")
-          .eq("annotate_flag", 1)
+          .eq("annotate_flag",1)
           .eq("table_id", tableId)
           .order("position"),
       ]);
@@ -94,13 +94,13 @@ function TranslationWorkspace() {
   const saveCells = useMutation({
     mutationFn: async () => {
       if (!data) return;
-      const changes: Record<string, string> = {};
+      const changes: Record<string,string> = {};
       for (const cell of data.cells) {
-        const value = (cellDrafts[cell.id] ?? "").trim();
-        if (value !== (cell.target_text ?? "")) changes[cell.id] = value;
+        const value=(cellDrafts[cell.id] ?? "").trim();
+        if (value !== (cell.target_text ?? "")) changes[cell.id]=value;
       }
-      const { error } = await supabase.rpc("hitab_save_table_translation", {
-        _table_id: tableId, _title: titleDraft.trim(), _cells: changes,
+      const {error}=await supabase.rpc("hitab_save_table_translation",{
+        _table_id:tableId,_title:titleDraft.trim(),_cells:changes,
       });
       if (error) throw error;
     },
@@ -125,7 +125,7 @@ function TranslationWorkspace() {
           question_id: question || null,
           answer_id: answer || null,
         })
-        .eq("id", pairId).eq("annotate_flag", 1);
+        .eq("id", pairId).eq("annotate_flag",1);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -143,7 +143,7 @@ function TranslationWorkspace() {
 
   if (rolesLoading) return <p className="label-mono">Memuat peran…</p>;
   if (rolesError) return <p role="alert">Gagal memuat peran.</p>;
-  if (!allowed) return <p role="alert">Halaman ini hanya untuk Anotator atau Admin.</p>;
+  if (!allowed) return <p role="alert">Halaman ini hanya untuk pengguna yang dapat bertugas sebagai Anotator.</p>;
   if (isLoading || !data) return <span className="label-mono">Memuat tabel…</span>;
   if (!data.table) {
     return (
@@ -190,11 +190,11 @@ function TranslationWorkspace() {
         </div>
       </div>
 
-
-      <div className="panel mt-6 p-4">
+      <div className="panel p-4">
         <div className="flex items-center gap-2">
           <div className="label-mono">Pratinjau tabel</div>
           <button
+            type="button"
             onClick={() => setShowPreview((v) => !v)}
             className="ml-auto rounded-lg px-3 py-1.5 font-mono text-[11px] text-mist ring-1 ring-line transition-colors hover:bg-ink/5"
           >
@@ -212,15 +212,12 @@ function TranslationWorkspace() {
         )}
       </div>
 
-
       <div className="mt-6 flex gap-1 border-b border-line/70">
         <button
           type="button"
           onClick={() => setActiveTab("header")}
           className={`px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === "header"
-              ? "border-b-2 border-teal text-teal"
-              : "text-mist hover:text-ink"
+            activeTab === "header" ? "border-b-2 border-teal text-teal" : "text-mist hover:text-ink"
           }`}
         >
           Header & kolom tabel

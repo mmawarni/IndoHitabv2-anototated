@@ -90,14 +90,16 @@ function UsersPage() {
   });
 
   const setRole = useMutation({
-    mutationFn: async ({ id, role }: { id: string; role: AppRole | null }) => {
-      const { error } = await supabase.rpc("admin_set_user_role", { _user_id: id, _role: role });
+    mutationFn: async ({ id, nextRoles }: { id: string; nextRoles: AppRole[] }) => {
+      const { error } = await supabase.rpc("admin_set_user_roles", { _user_id: id, _roles: nextRoles });
       if (error) throw error;
     },
     onSuccess: () => {
       toast.success("Peran diperbarui.");
       queryClient.invalidateQueries({ queryKey: ["pengguna"] });
       queryClient.invalidateQueries({ queryKey: ["roles"] });
+      queryClient.invalidateQueries({ queryKey: ["assignment-users"] });
+      queryClient.invalidateQueries({ queryKey: ["progres"] });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Gagal menyimpan."),
   });
@@ -136,7 +138,7 @@ function UsersPage() {
       />
 
       <div className="panel overflow-hidden">
-        <div className="grid grid-cols-[1fr_9rem_7rem_7rem] gap-3 border-b border-line/70 px-4 py-2">
+        <div className="grid grid-cols-[1fr_10rem_7rem_7rem] gap-3 border-b border-line/70 px-4 py-2">
           <span className="label-mono">Nama</span>
           <span className="label-mono">Peran</span>
           <span className="label-mono">Entri</span>
@@ -144,13 +146,11 @@ function UsersPage() {
         </div>
 
         {data.profiles.map((profile) => {
-          const role =
-            (data.userRoles.find((r) => r.user_id === profile.id)?.role as AppRole | undefined) ??
-            null;
+          const profileRoles = data.userRoles.filter((r) => r.user_id === profile.id).map((r) => r.role as AppRole);
           return (
             <div
               key={profile.id}
-              className="grid grid-cols-[1fr_9rem_7rem_7rem] items-center gap-3 border-b border-line/50 px-4 py-2.5 text-sm transition-colors last:border-b-0 hover:bg-ink/5"
+              className="grid grid-cols-[1fr_10rem_7rem_7rem] items-center gap-3 border-b border-line/50 px-4 py-2.5 text-sm transition-colors last:border-b-0 hover:bg-ink/5"
             >
               <div className="min-w-0">
                 <div className="truncate font-medium">
@@ -160,22 +160,17 @@ function UsersPage() {
                 <div className="truncate font-mono text-[11px] text-mist">{profile.email}</div>
               </div>
 
-              {isAdmin ? (
-                <select
-                  value={role ?? ""}
-                  onChange={(e) => setRole.mutate({ id: profile.id, role: e.target.value ? e.target.value as AppRole : null })}
-                  className="rounded-lg bg-paper/80 px-2 py-1 font-mono text-xs ring-1 ring-line outline-none focus:ring-2 focus:ring-teal/50"
-                >
-                  <option value="">Belum ditetapkan</option>
-                  {roles.map((r) => (
-                    <option key={r} value={r}>
-                      {roleLabel[r]}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <span className="font-mono text-xs text-teal">{role ? roleLabel[role] : "Belum ditetapkan"}</span>
-              )}
+              <div className="flex flex-col gap-1" aria-label={`Peran ${profile.full_name || profile.email}`}>
+                {roles.map((r) => <label key={r} className="flex items-center gap-1.5 text-xs">
+                  <input type="checkbox" checked={profileRoles.includes(r)} disabled={setRole.isPending}
+                    onChange={(e) => setRole.mutate({
+                      id: profile.id,
+                      nextRoles: e.target.checked ? [...profileRoles, r] : profileRoles.filter((existing) => existing !== r),
+                    })} />
+                  {roleLabel[r]}
+                </label>)}
+                {!profileRoles.length && <span className="text-[10px] text-mist">Belum ditetapkan</span>}
+              </div>
 
               <span className="font-mono text-xs">{countFor(profile.id)}</span>
 

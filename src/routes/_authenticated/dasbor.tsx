@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeading } from "@/components/AppShell";
+import { useCurrentUser } from "@/hooks/useAuth";
 
 export const Route = createFileRoute("/_authenticated/dasbor")({
   head: () => ({ meta: [{ title: "Dasbor Progres — HiTAB TQA" }] }),
@@ -20,8 +21,11 @@ function StatCard({label,done,total,bar}:{label:string;done:number;total:number;
   </div>;
 }
 function DashboardPage() {
+  const { userId, roles, isAdmin, isValidator, rolesLoading, rolesError } = useCurrentUser();
+  const globalView = isAdmin || isValidator;
   const {data,isPending,error}=useQuery({
-    queryKey:["progres"],
+    queryKey:["progres",userId,[...roles].sort().join(",")],
+    enabled: !!userId && !rolesLoading && !rolesError,
     queryFn:async()=>{
       const [progress,people]=await Promise.all([
         supabase.rpc("hitab_progress",{}),supabase.rpc("hitab_user_contributions",{}),
@@ -31,12 +35,13 @@ function DashboardPage() {
       return {counts:progress.data?.[0] ?? null,people:people.data ?? []};
     },
   });
-  if (isPending) return <p className="label-mono">Memuat progres…</p>;
+  if (rolesLoading || isPending) return <p className="label-mono">Memuat progres…</p>;
+  if (rolesError) return <p role="alert">Gagal memuat peran pengguna.</p>;
   if (error || !data?.counts) return <p role="alert">Gagal memuat progres. Pastikan migration v3 sudah diterapkan.</p>;
   const counts=data.counts;
   const maximum=Math.max(1,...data.people.map((p)=>Number(p.entry_count)));
   return <section>
-    <PageHeading eyebrow="a · dasbor progres" title="Rekap anotator"
+    <PageHeading eyebrow="a · dasbor progres" title={globalView ? "Progres seluruh tim" : "Progres penugasan saya"}
       right={<span className="font-mono text-xs text-mist">{counts.tables_total} tabel · {counts.cells_total} sel · {counts.qa_total} QA dalam sampel</span>} />
     <div className="grid gap-4 md:grid-cols-3">
       <StatCard label="Header dan label diterjemahkan" done={counts.cells_done} total={counts.cells_total} bar="bg-teal" />
@@ -44,7 +49,7 @@ function DashboardPage() {
       <StatCard label="Judul tabel" done={counts.titles_done} total={counts.tables_total} bar="bg-amber" />
     </div>
     <div className="mt-8">
-      <div className="label-mono mb-3">Kontribusi per anotator (status terakhir)</div>
+      <div className="label-mono mb-3">{globalView ? "Kontribusi per anotator (status terakhir)" : "Kontribusi saya (item yang ditugaskan)"}</div>
       <div className="panel overflow-hidden">
         {data.people.length ? data.people.map((p)=><div key={p.user_id}
           className="grid grid-cols-[1fr_10rem_4rem] items-center gap-3 border-b border-line/50 px-4 py-3 text-sm last:border-b-0">
@@ -55,7 +60,7 @@ function DashboardPage() {
           <span className="text-right font-mono text-xs">{p.entry_count}</span>
         </div>) : <p className="p-4 text-sm text-mist">Belum ada terjemahan tersimpan.</p>}
       </div>
-      <p className="mt-2 text-xs text-mist">Angka di atas menghitung data dengan flag sampel 1. Riwayat setiap penyimpanan tersedia di Pengguna → Log aktivitas.</p>
+      <p className="mt-2 text-xs text-mist">Hanya item dengan flag sampel 1 dihitung. {globalView ? "Admin dan Validator melihat seluruh progres tim." : "Anotator hanya melihat tabel dan QA yang ditugaskan kepadanya."}</p>
     </div>
   </section>;
 }

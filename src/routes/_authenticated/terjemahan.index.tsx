@@ -24,8 +24,8 @@ export const Route = createFileRoute("/_authenticated/terjemahan/")({
 });
 
 function WorkspaceListPage() {
-  const { userId, isAdmin, isAnotator, rolesLoading, rolesError } = useCurrentUser();
-  const allowed = isAdmin || isAnotator;
+  const { userId, isAdmin, isAnotator, isValidator, rolesLoading, rolesError } = useCurrentUser();
+  const allowed = isAdmin || isAnotator || isValidator;
   const { data, isLoading } = useQuery({
     queryKey: ["daftar-tabel"],
     enabled: allowed,
@@ -44,7 +44,7 @@ function WorkspaceListPage() {
 
   if (rolesLoading) return <p className="label-mono">Memuat peran…</p>;
   if (rolesError) return <p role="alert">Gagal memuat peran.</p>;
-  if (!allowed) return <p role="alert">Halaman ini hanya untuk Anotator atau Admin.</p>;
+  if (!allowed) return <p role="alert">Halaman ini hanya untuk pengguna yang dapat bertugas sebagai Anotator.</p>;
   if (isLoading || !data) return <span className="label-mono">Memuat daftar tabel…</span>;
 
   return (

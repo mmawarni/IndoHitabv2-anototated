@@ -349,6 +349,14 @@ export type Database = {
         Args: { _user_id: string; _role?: Database["public"]["Enums"]["app_role"] | null }
         Returns: undefined
       }
+      admin_set_user_roles: {
+        Args: { _user_id: string; _roles: Database["public"]["Enums"]["app_role"][] }
+        Returns: undefined
+      }
+      admin_bulk_assign_work: {
+        Args: { _kind: string; _source_ids: string[]; _annotator_id?: string | null; _validator_id?: string | null; _change_annotator?: boolean; _change_validator?: boolean }
+        Returns: number
+      }
       admin_assign_work: {
         Args: { _kind: string; _source_id: string; _annotator_id?: string | null; _validator_id?: string | null }
         Returns: undefined
@@ -364,6 +372,30 @@ export type Database = {
           annotator_id: string | null
           validator_id: string | null
           total_count: number
+        }[]
+      }
+      hitab_export_page: {
+        Args: { _kind: string; _stage?: string; _sample_only?: boolean; _limit?: number; _offset?: number }
+        Returns: {
+          source_id: string
+          parent_source_id: string | null
+          dataset_split: string | null
+          annotate_flag: number
+          work_status: string
+          payload: Json
+          total_count: number
+        }[]
+      }
+      hitab_export_summary: {
+        Args: { _sample_only?: boolean }
+        Returns: {
+          tables_current: number
+          qa_current: number
+          tables_final: number
+          qa_final: number
+          tables_missing_source: number
+          qa_missing_source: number
+          qa_waiting_for_table_final: number
         }[]
       }
       hitab_save_table_translation: {
