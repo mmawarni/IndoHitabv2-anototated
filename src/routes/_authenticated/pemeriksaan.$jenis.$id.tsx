@@ -6,6 +6,9 @@ import { PageHeading } from "@/components/AppShell";
 import { useCurrentUser } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
+import { HiTabTablePreview } from "@/components/HiTabTablePreview";
+import { HiTabQaLogic } from "@/components/HiTabQaLogic";
+import { useWorkOpen } from "@/hooks/useWorkOpen";
 
 export const Route = createFileRoute("/_authenticated/pemeriksaan/$jenis/$id")({
   head: () => ({ meta: [{ title: "Form Pemeriksaan — HiTab TQA" }] }),
@@ -26,6 +29,7 @@ function ReviewDetail() {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [dirty, setDirty] = useState(false);
+  const [logicConfirmed, setLogicConfirmed] = useState(false);
 
   const { data, isPending, error } = useQuery({
     queryKey: ["review-detail", jenis, id],
@@ -33,7 +37,7 @@ function ReviewDetail() {
     queryFn: async () => {
       if (isTable) {
         const [t, c, r] = await Promise.all([
-          supabase.from("tqa_tables").select("id, code, title_en, title_id").eq("id", id).maybeSingle(),
+          supabase.from("tqa_tables").select("id, code, title_en, title_id, original_table, annotated_table, validated_table, annotate_flag, validator_id").eq("id", id).maybeSingle(),
           supabase.from("table_cells").select("id, kind, position, source_text, target_text, status").eq("table_id", id).order("position"),
           supabase.from("table_reviews").select("id, reviewer_id, status, reviewed_title_id, corrected_cells").eq("table_id", id).maybeSingle(),
         ]);
@@ -43,13 +47,13 @@ function ReviewDetail() {
         return { kind: "tabel" as const, table: t.data, cells: c.data ?? [], review: r.data };
       }
       const [q, r] = await Promise.all([
-        supabase.from("qa_pairs").select("id, table_id, question_en, answer_en, question_id, answer_id, status").eq("id", id).maybeSingle(),
-        supabase.from("qa_reviews").select("id, reviewer_id, status, reviewed_question_id, reviewed_answer_id").eq("qa_pair_id", id).maybeSingle(),
+        supabase.from("qa_pairs").select("id, table_id, question_en, answer_en, question_id, answer_id, status, original_qa, annotated_qa, validated_qa, annotate_flag, original_question_id, validator_id").eq("id", id).maybeSingle(),
+        supabase.from("qa_reviews").select("id, reviewer_id, status, reviewed_question_id, reviewed_answer_id, logic_confirmed").eq("qa_pair_id", id).maybeSingle(),
       ]);
       if (q.error) throw q.error;
       if (r.error) throw r.error;
       if (!q.data) return { kind: "pertanyaan" as const, pair: null, table: null, review: r.data };
-      const t = await supabase.from("tqa_tables").select("code, title_en, title_id").eq("id", q.data.table_id).maybeSingle();
+      const t = await supabase.from("tqa_tables").select("code, title_en, title_id, original_table").eq("id", q.data.table_id).maybeSingle();
       if (t.error) throw t.error;
       return { kind: "pertanyaan" as const, pair: q.data, table: t.data, review: r.data };
     },
@@ -66,6 +70,7 @@ function ReviewDetail() {
     } else {
       setQuestion(data.review?.reviewed_question_id ?? data.pair?.question_id ?? "");
       setAnswer(data.review?.reviewed_answer_id ?? data.pair?.answer_id ?? "");
+      setLogicConfirmed(data.review?.logic_confirmed ?? false);
     }
     setDirty(false);
   }, [data]);
@@ -74,9 +79,13 @@ function ReviewDetail() {
     && data.cells.every((cell) => !!cell.target_text?.trim() && cell.status === "selesai");
   const qaReady = data?.kind === "pertanyaan" && !!data.pair?.question_id?.trim()
     && !!data.pair?.answer_id?.trim() && data.pair.status === "selesai";
-  const ready = isTable ? tableReady : qaReady;
+  const sampled = data?.kind === "tabel" ? data.table?.annotate_flag === 1 : data?.pair?.annotate_flag === 1;
+  const ready = sampled && (isTable ? tableReady : qaReady);
+  const assignedValidator = data?.kind === "tabel" ? data.table?.validator_id : data?.pair?.validator_id;
+  const notAssigned = !isAdmin && assignedValidator !== userId;
   const ownedByOther = !!data?.review?.reviewer_id && data.review.reviewer_id !== userId && !isAdmin;
-  const canEdit = allowed && ready && !ownedByOther && !!userId;
+  const canEdit = allowed && ready && !notAssigned && !ownedByOther && !!userId;
+  useWorkOpen(isTable ? "table_review" : "qa_review", id, canEdit);
 
   const save = useMutation({
     mutationFn: async (status: ReviewStatus) => {
@@ -101,7 +110,10 @@ function ReviewDetail() {
         if (status === "selesai" && (!question.trim() || !answer.trim())) {
           throw new Error("Hasil pemeriksaan pertanyaan dan jawaban wajib diisi.");
         }
-        const values = { status, reviewed_question_id: question.trim(), reviewed_answer_id: answer.trim() };
+        if (status === "selesai" && data.pair.original_qa && !logicConfirmed) {
+          throw new Error("Periksa answer asli, aggregation, formula, dan linked cells terlebih dahulu.");
+        }
+        const values = { status, reviewed_question_id: question.trim(), reviewed_answer_id: answer.trim(), logic_confirmed: logicConfirmed };
         if (data.review) {
           const { data: updated, error } = await supabase.from("qa_reviews")
             .update(values).eq("id", data.review.id).select("id").maybeSingle();
@@ -137,11 +149,18 @@ function ReviewDetail() {
       <PageHeading eyebrow={`v · ${data.kind === "tabel" ? "tabel" : "pertanyaan"} · ${data.table.code}`}
         title="Pemeriksaan terjemahan"
         right={<Link to="/pemeriksaan" className="font-mono text-xs text-teal hover:underline">← Daftar pemeriksaan</Link>} />
+      {!sampled && <p role="alert" className="mb-4 rounded-lg bg-amber/10 p-3 text-sm">Entri tidak termasuk sampel validasi.</p>}
       {!ready && <div role="alert" className="mb-5 rounded-xl bg-amber/10 p-4 text-sm text-amber ring-1 ring-amber/25">Terjemahan belum lengkap. Form pemeriksaan dikunci sampai anotator menyelesaikannya.</div>}
+      {notAssigned && <div role="alert" className="mb-5 rounded-xl bg-amber/10 p-4 text-sm text-amber ring-1 ring-amber/25">Entri ini tidak ditugaskan kepada akun Validator Anda.</div>}
       {ownedByOther && <div role="alert" className="mb-5 rounded-xl bg-amber/10 p-4 text-sm text-amber ring-1 ring-amber/25">Entri sedang ditangani validator lain. Anda tidak dapat mengubahnya.</div>}
       {data.review?.status === "selesai" && <p className="mb-4 font-mono text-xs text-teal">Pemeriksaan sudah selesai. Ubah hasil lalu pilih “Simpan perbaikan” untuk memutakhirkan hasil.</p>}
       <div className="panel overflow-hidden">
         {data.kind === "tabel" ? <>
+          <div className="space-y-4 border-b border-line/50 p-4">
+            <HiTabTablePreview snapshot={data.table.original_table} label="Tabel sumber asli" />
+            <HiTabTablePreview snapshot={data.table.annotated_table} label="Tabel hasil anotator" />
+            {data.table.validated_table && <HiTabTablePreview snapshot={data.table.validated_table} label="Snapshot validasi sebelumnya" />}
+          </div>
           <div className="border-b border-line/70 p-4">
             <label htmlFor="review-title" className="label-mono mb-2 block">Judul tabel · EN → ID</label>
             <div className="mb-2 rounded-lg bg-paper/60 p-3 text-sm">{data.table.title_en}</div>
@@ -164,6 +183,9 @@ function ReviewDetail() {
             </label>
           </div>)}
         </> : data.pair ? <div className="space-y-5 p-4">
+          <div className="font-mono text-xs text-mist">ID QA asli: {data.pair.original_question_id ?? "Belum diimpor"}</div>
+          <HiTabQaLogic original={data.pair.original_qa} />
+          <HiTabTablePreview snapshot={data.table.original_table} label="Tabel sumber untuk verifikasi jawaban" />
           <div>
             <div className="label-mono mb-1">Pertanyaan · EN</div>
             <p className="mb-2 text-sm">{data.pair.question_en}</p>
@@ -182,6 +204,11 @@ function ReviewDetail() {
               onChange={(e) => { setAnswer(e.target.value); setDirty(true); }}
               className="w-full rounded-lg bg-frost p-3 text-sm ring-1 ring-line outline-none focus:ring-2 focus:ring-teal/50 disabled:opacity-60" />
           </div>
+          {data.pair.original_qa && <label className="flex items-start gap-2 rounded-lg bg-teal/5 p-3 text-sm">
+            <input type="checkbox" checked={logicConfirmed} disabled={!canEdit || save.isPending}
+              onChange={(e)=>{setLogicConfirmed(e.target.checked);setDirty(true);}} />
+            Saya sudah memeriksa kesesuaian terjemahan dengan jawaban asli, aggregation, formula, dan linked cells.
+          </label>}
         </div> : null}
         <div className="flex flex-wrap items-center gap-3 border-t border-line/70 p-4">
           <button type="button" disabled={!canEdit || save.isPending}

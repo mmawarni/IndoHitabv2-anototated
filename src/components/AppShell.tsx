@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { roleLabel, useCurrentUser } from "@/hooks/useAuth";
 
-type MenuItem = { to: "/dasbor" | "/terjemahan" | "/pemeriksaan" | "/pengguna"; label: string };
+type MenuItem = { to: "/dasbor" | "/terjemahan" | "/pemeriksaan" | "/pengguna" | "/penugasan"; label: string };
 
 function MenuGroup({ label, items }: { label: string; items: MenuItem[] }) {
   if (!items.length) return null;
@@ -56,12 +56,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         <MenuGroup label="Umum" items={[{ to: "/dasbor", label: "Dasbor" }]} />
         <MenuGroup label="Anotator" items={canTranslate ? [{ to: "/terjemahan", label: "Penerjemahan" }] : []} />
         <MenuGroup label="Validator" items={canValidate ? [{ to: "/pemeriksaan", label: "Pemeriksaan" }] : []} />
-        <MenuGroup label="Pengaturan" items={isAdmin ? [{ to: "/pengguna", label: "Pengguna" }] : []} />
+        <MenuGroup label="Pengaturan" items={isAdmin ? [{ to: "/pengguna", label: "Pengguna & Peran" }, { to: "/penugasan", label: "Penugasan" }] : []} />
         <div className="mt-auto space-y-2 border-t border-line/70 pt-4">
           <div className="label-mono">Masuk sebagai</div>
           <div className="truncate text-sm font-medium">{profile?.full_name || email}</div>
           <div className="font-mono text-xs text-mist">
-            {roles.length ? roles.map((r) => roleLabel[r]).join(" · ") : "Memuat peran…"}
+            {roles.length ? roles.map((r) => roleLabel[r]).join(" · ") : "Menunggu penetapan peran"}
           </div>
           <button onClick={handleSignOut} className="w-full rounded-lg px-3 py-1.5 font-mono text-[11px] text-mist ring-1 ring-line transition-colors hover:bg-ink/5">Keluar</button>
         </div>

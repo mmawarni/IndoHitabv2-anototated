@@ -49,6 +49,7 @@ export type Database = {
       }
       qa_reviews: {
         Row: {
+          logic_confirmed: boolean
           id: string
           qa_pair_id: string
           reviewer_id: string
@@ -59,6 +60,7 @@ export type Database = {
           completed_at: string | null
         }
         Insert: {
+          logic_confirmed?: boolean
           id?: string
           qa_pair_id: string
           reviewer_id: string
@@ -69,6 +71,7 @@ export type Database = {
           completed_at?: string | null
         }
         Update: {
+          logic_confirmed?: boolean
           id?: string
           qa_pair_id?: string
           reviewer_id?: string
@@ -77,6 +80,52 @@ export type Database = {
           reviewed_answer_id?: string
           updated_at?: string
           completed_at?: string | null
+        }
+        Relationships: []
+      }
+      user_work_log: {
+        Row: {
+          id: number
+          actor_id: string | null
+          actor_role: string
+          item_type: string
+          table_id: string | null
+          qa_pair_id: string | null
+          cell_id: string | null
+          source_table_id: string | null
+          source_question_id: string | null
+          action: string
+          before_value: Json | null
+          after_value: Json | null
+          occurred_at: string
+        }
+        Insert: {
+          actor_id?: string | null
+          actor_role: string
+          item_type: string
+          table_id?: string | null
+          qa_pair_id?: string | null
+          cell_id?: string | null
+          source_table_id?: string | null
+          source_question_id?: string | null
+          action: string
+          before_value?: Json | null
+          after_value?: Json | null
+          occurred_at?: string
+        }
+        Update: {
+          actor_id?: string | null
+          actor_role?: string
+          item_type?: string
+          table_id?: string | null
+          qa_pair_id?: string | null
+          cell_id?: string | null
+          source_table_id?: string | null
+          source_question_id?: string | null
+          action?: string
+          before_value?: Json | null
+          after_value?: Json | null
+          occurred_at?: string
         }
         Relationships: []
       }
@@ -106,6 +155,14 @@ export type Database = {
       }
       qa_pairs: {
         Row: {
+          original_question_id: string | null
+          original_qa: Json | null
+          annotated_qa: Json | null
+          validated_qa: Json | null
+          dataset_split: string | null
+          annotate_flag: number
+          annotator_id: string | null
+          validator_id: string | null
           answer_en: string
           answer_id: string | null
           id: string
@@ -118,6 +175,14 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          original_question_id?: string | null
+          original_qa?: Json | null
+          annotated_qa?: Json | null
+          validated_qa?: Json | null
+          dataset_split?: string | null
+          annotate_flag?: number
+          annotator_id?: string | null
+          validator_id?: string | null
           answer_en: string
           answer_id?: string | null
           id?: string
@@ -130,6 +195,14 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          original_question_id?: string | null
+          original_qa?: Json | null
+          annotated_qa?: Json | null
+          validated_qa?: Json | null
+          dataset_split?: string | null
+          annotate_flag?: number
+          annotator_id?: string | null
+          validator_id?: string | null
           answer_en?: string
           answer_id?: string | null
           id?: string
@@ -153,6 +226,8 @@ export type Database = {
       }
       table_cells: {
         Row: {
+          row_index: number | null
+          column_index: number | null
           id: string
           kind: string
           position: number
@@ -164,6 +239,8 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          row_index?: number | null
+          column_index?: number | null
           id?: string
           kind?: string
           position?: number
@@ -175,6 +252,8 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          row_index?: number | null
+          column_index?: number | null
           id?: string
           kind?: string
           position?: number
@@ -197,6 +276,13 @@ export type Database = {
       }
       tqa_tables: {
         Row: {
+          original_table_id: string | null
+          original_table: Json | null
+          annotated_table: Json | null
+          validated_table: Json | null
+          annotate_flag: number
+          annotator_id: string | null
+          validator_id: string | null
           assigned_to: string | null
           code: string
           created_at: string
@@ -205,6 +291,13 @@ export type Database = {
           title_id: string | null
         }
         Insert: {
+          original_table_id?: string | null
+          original_table?: Json | null
+          annotated_table?: Json | null
+          validated_table?: Json | null
+          annotate_flag?: number
+          annotator_id?: string | null
+          validator_id?: string | null
           assigned_to?: string | null
           code: string
           created_at?: string
@@ -213,6 +306,13 @@ export type Database = {
           title_id?: string | null
         }
         Update: {
+          original_table_id?: string | null
+          original_table?: Json | null
+          annotated_table?: Json | null
+          validated_table?: Json | null
+          annotate_flag?: number
+          annotator_id?: string | null
+          validator_id?: string | null
           assigned_to?: string | null
           code?: string
           created_at?: string
@@ -245,6 +345,47 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_set_user_role: {
+        Args: { _user_id: string; _role?: Database["public"]["Enums"]["app_role"] | null }
+        Returns: undefined
+      }
+      admin_assign_work: {
+        Args: { _kind: string; _source_id: string; _annotator_id?: string | null; _validator_id?: string | null }
+        Returns: undefined
+      }
+      assignment_queue: {
+        Args: { _kind: string; _search?: string; _limit?: number; _offset?: number }
+        Returns: {
+          item_id: string
+          source_id: string | null
+          table_code: string
+          source_text: string
+          annotate_flag: number
+          annotator_id: string | null
+          validator_id: string | null
+          total_count: number
+        }[]
+      }
+      hitab_save_table_translation: {
+        Args: { _table_id: string; _title: string; _cells: Json }
+        Returns: undefined
+      }
+      hitab_progress: {
+        Args: Record<PropertyKey, never>
+        Returns: { tables_total: number; titles_done: number; cells_total: number; cells_done: number; qa_total: number; qa_done: number }[]
+      }
+      hitab_user_contributions: {
+        Args: Record<PropertyKey, never>
+        Returns: { user_id: string; full_name: string | null; email: string | null; entry_count: number }[]
+      }
+      hitab_open_work: {
+        Args: { _kind: string; _id: string }
+        Returns: undefined
+      }
+      hitab_set_sampling: {
+        Args: { _kind: string; _source_id: string; _flag: number }
+        Returns: undefined
+      }
       review_queue: {
         Args: { _kind: string; _search?: string; _status?: string; _limit?: number; _offset?: number }
         Returns: {

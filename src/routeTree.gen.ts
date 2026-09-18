@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthenticatedDasborRouteImport } from './routes/_authenticated/dasbor'
 import { Route as AuthenticatedPenggunaRouteImport } from './routes/_authenticated/pengguna'
+import { Route as AuthenticatedPenugasanRouteImport } from './routes/_authenticated/penugasan'
 import { Route as AuthenticatedPemeriksaanIndexRouteImport } from './routes/_authenticated/pemeriksaan.index'
 import { Route as AuthenticatedTerjemahanIndexRouteImport } from './routes/_authenticated/terjemahan.index'
 import { Route as AuthenticatedTerjemahanTableIdRouteImport } from './routes/_authenticated/terjemahan.$tableId'
@@ -35,6 +36,11 @@ const AuthenticatedDasborRoute = AuthenticatedDasborRouteImport.update({
 const AuthenticatedPenggunaRoute = AuthenticatedPenggunaRouteImport.update({
   id: '/pengguna',
   path: '/pengguna',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedPenugasanRoute = AuthenticatedPenugasanRouteImport.update({
+  id: '/penugasan',
+  path: '/penugasan',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedPemeriksaanIndexRoute =
@@ -66,6 +72,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dasbor': typeof AuthenticatedDasborRoute
   '/pengguna': typeof AuthenticatedPenggunaRoute
+  '/penugasan': typeof AuthenticatedPenugasanRoute
   '/terjemahan/$tableId': typeof AuthenticatedTerjemahanTableIdRoute
   '/pemeriksaan/': typeof AuthenticatedPemeriksaanIndexRoute
   '/terjemahan/': typeof AuthenticatedTerjemahanIndexRoute
@@ -75,6 +82,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dasbor': typeof AuthenticatedDasborRoute
   '/pengguna': typeof AuthenticatedPenggunaRoute
+  '/penugasan': typeof AuthenticatedPenugasanRoute
   '/terjemahan/$tableId': typeof AuthenticatedTerjemahanTableIdRoute
   '/pemeriksaan': typeof AuthenticatedPemeriksaanIndexRoute
   '/terjemahan': typeof AuthenticatedTerjemahanIndexRoute
@@ -86,6 +94,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/_authenticated/dasbor': typeof AuthenticatedDasborRoute
   '/_authenticated/pengguna': typeof AuthenticatedPenggunaRoute
+  '/_authenticated/penugasan': typeof AuthenticatedPenugasanRoute
   '/_authenticated/terjemahan/$tableId': typeof AuthenticatedTerjemahanTableIdRoute
   '/_authenticated/pemeriksaan/': typeof AuthenticatedPemeriksaanIndexRoute
   '/_authenticated/terjemahan/': typeof AuthenticatedTerjemahanIndexRoute
@@ -97,6 +106,7 @@ export interface FileRouteTypes {
     | '/'
     | '/dasbor'
     | '/pengguna'
+    | '/penugasan'
     | '/terjemahan/$tableId'
     | '/pemeriksaan/'
     | '/terjemahan/'
@@ -106,6 +116,7 @@ export interface FileRouteTypes {
     | '/'
     | '/dasbor'
     | '/pengguna'
+    | '/penugasan'
     | '/terjemahan/$tableId'
     | '/pemeriksaan'
     | '/terjemahan'
@@ -116,6 +127,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/_authenticated/dasbor'
     | '/_authenticated/pengguna'
+    | '/_authenticated/penugasan'
     | '/_authenticated/terjemahan/$tableId'
     | '/_authenticated/pemeriksaan/'
     | '/_authenticated/terjemahan/'
@@ -157,6 +169,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPenggunaRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/penugasan': {
+      id: '/_authenticated/penugasan'
+      path: '/penugasan'
+      fullPath: '/penugasan'
+      preLoaderRoute: typeof AuthenticatedPenugasanRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/pemeriksaan/': {
       id: '/_authenticated/pemeriksaan/'
       path: '/pemeriksaan'
@@ -191,6 +210,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDasborRoute: typeof AuthenticatedDasborRoute
   AuthenticatedPenggunaRoute: typeof AuthenticatedPenggunaRoute
+  AuthenticatedPenugasanRoute: typeof AuthenticatedPenugasanRoute
   AuthenticatedTerjemahanTableIdRoute: typeof AuthenticatedTerjemahanTableIdRoute
   AuthenticatedPemeriksaanIndexRoute: typeof AuthenticatedPemeriksaanIndexRoute
   AuthenticatedTerjemahanIndexRoute: typeof AuthenticatedTerjemahanIndexRoute
@@ -200,6 +220,7 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDasborRoute: AuthenticatedDasborRoute,
   AuthenticatedPenggunaRoute: AuthenticatedPenggunaRoute,
+  AuthenticatedPenugasanRoute: AuthenticatedPenugasanRoute,
   AuthenticatedTerjemahanTableIdRoute: AuthenticatedTerjemahanTableIdRoute,
   AuthenticatedPemeriksaanIndexRoute: AuthenticatedPemeriksaanIndexRoute,
   AuthenticatedTerjemahanIndexRoute: AuthenticatedTerjemahanIndexRoute,

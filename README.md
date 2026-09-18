@@ -27,6 +27,3 @@ npm run dev
 - TypeScript
 - React
 - Tailwind CSS
-# IndoHitabv2-anototated
-# IndoHitabv2-anototated
-# IndoHitabv2-anototated

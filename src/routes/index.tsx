@@ -57,7 +57,7 @@ function LoginPage() {
         if (data.session) {
           navigate({ to: "/dasbor", replace: true });
         } else {
-          toast.success("Akun dibuat. Silakan cek email untuk konfirmasi.");
+          toast.success("Akun dibuat. Setelah konfirmasi email, Admin akan menetapkan peran Anotator atau Validator.");
           setMode("masuk");
         }
       }
@@ -137,7 +137,7 @@ function LoginPage() {
               ? "Memproses…"
               : mode === "masuk"
                 ? "Masuk ke ruang kerja"
-                : "Buat akun anotator"}
+                : "Buat akun"}
           </button>
 
           <div className="mt-5 flex items-center justify-between border-t border-line/70 pt-4 font-mono text-[10px] text-mist">

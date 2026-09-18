@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -29,6 +30,10 @@ const roles: AppRole[] = ["admin", "validator", "anotator"];
 function UsersPage() {
   const { isAdmin, userId, rolesLoading, rolesError } = useCurrentUser();
   const queryClient = useQueryClient();
+  const [sourceId,setSourceId] = useState("");
+  const [sampleKind,setSampleKind] = useState<"table"|"qa">("table");
+  const [sampleFlag,setSampleFlag] = useState<0|1>(1);
+  const [logUser,setLogUser] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["pengguna"],
@@ -53,12 +58,41 @@ function UsersPage() {
     },
   });
 
+  const activity = useQuery({
+    queryKey: ["user-work-log", logUser],
+    enabled: isAdmin,
+    queryFn: async () => {
+      let query = supabase.from("user_work_log")
+        .select("id,actor_id,actor_role,item_type,source_table_id,source_question_id,action,occurred_at")
+        .order("occurred_at",{ascending:false}).limit(100);
+      if (logUser) query = query.eq("actor_id",logUser);
+      const {data,error} = await query;
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const sample = useMutation({
+    mutationFn: async () => {
+      if (!sourceId.trim()) throw new Error("Masukkan ID asli tabel atau QA.");
+      const {error} = await supabase.rpc("hitab_set_sampling",{
+        _kind:sampleKind,_source_id:sourceId.trim(),_flag:sampleFlag,
+      });
+      if (error) throw error;
+    },
+    onSuccess:()=>{
+      toast.success("Sampling diperbarui.");
+      queryClient.invalidateQueries({queryKey:["daftar-tabel"]});
+      queryClient.invalidateQueries({queryKey:["review-queue"]});
+      queryClient.invalidateQueries({queryKey:["progres"]});
+    },
+    onError:(error)=>toast.error(error instanceof Error ? error.message : "Gagal memperbarui sampling."),
+  });
+
   const setRole = useMutation({
-    mutationFn: async ({ id, role }: { id: string; role: AppRole }) => {
-      const remove = await supabase.from("user_roles").delete().eq("user_id", id);
-      if (remove.error) throw remove.error;
-      const insert = await supabase.from("user_roles").insert({ user_id: id, role });
-      if (insert.error) throw insert.error;
+    mutationFn: async ({ id, role }: { id: string; role: AppRole | null }) => {
+      const { error } = await supabase.rpc("admin_set_user_role", { _user_id: id, _role: role });
+      if (error) throw error;
     },
     onSuccess: () => {
       toast.success("Peran diperbarui.");
@@ -112,7 +146,7 @@ function UsersPage() {
         {data.profiles.map((profile) => {
           const role =
             (data.userRoles.find((r) => r.user_id === profile.id)?.role as AppRole | undefined) ??
-            "anotator";
+            null;
           return (
             <div
               key={profile.id}
@@ -128,10 +162,11 @@ function UsersPage() {
 
               {isAdmin ? (
                 <select
-                  value={role}
-                  onChange={(e) => setRole.mutate({ id: profile.id, role: e.target.value as AppRole })}
+                  value={role ?? ""}
+                  onChange={(e) => setRole.mutate({ id: profile.id, role: e.target.value ? e.target.value as AppRole : null })}
                   className="rounded-lg bg-paper/80 px-2 py-1 font-mono text-xs ring-1 ring-line outline-none focus:ring-2 focus:ring-teal/50"
                 >
+                  <option value="">Belum ditetapkan</option>
                   {roles.map((r) => (
                     <option key={r} value={r}>
                       {roleLabel[r]}
@@ -139,7 +174,7 @@ function UsersPage() {
                   ))}
                 </select>
               ) : (
-                <span className="font-mono text-xs text-teal">{roleLabel[role]}</span>
+                <span className="font-mono text-xs text-teal">{role ? roleLabel[role] : "Belum ditetapkan"}</span>
               )}
 
               <span className="font-mono text-xs">{countFor(profile.id)}</span>
@@ -150,6 +185,7 @@ function UsersPage() {
                   onChange={(e) => setStatus.mutate({ id: profile.id, status: e.target.value })}
                   className="rounded-lg bg-paper/80 px-2 py-1 font-mono text-xs ring-1 ring-line outline-none focus:ring-2 focus:ring-teal/50"
                 >
+                  <option value="menunggu_peran">menunggu_peran</option>
                   <option value="aktif">aktif</option>
                   <option value="cuti">cuti</option>
                   <option value="nonaktif">nonaktif</option>
@@ -166,8 +202,52 @@ function UsersPage() {
         })}
       </div>
 
+      <div className="panel mt-6 space-y-3 p-4">
+        <h2 className="font-display text-lg font-semibold">Sampling anotasi</h2>
+        <p className="text-xs text-mist">Tabel dan QA disampel terpisah. ID asli ≠ UUID internal; 1 masuk sampel, 0 tidak.</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <select aria-label="Jenis sampel" value={sampleKind} onChange={(e)=>setSampleKind(e.target.value as "table"|"qa")}
+            className="rounded-lg bg-frost p-2 text-sm ring-1 ring-line">
+            <option value="table">Tabel</option><option value="qa">QA</option>
+          </select>
+          <input aria-label="ID asli" value={sourceId} onChange={(e)=>setSourceId(e.target.value)}
+            placeholder="ID asli HiTAB" className="min-w-40 flex-1 rounded-lg bg-frost p-2 text-sm ring-1 ring-line" />
+          <select aria-label="Flag sampel" value={sampleFlag} onChange={(e)=>setSampleFlag(Number(e.target.value) as 0|1)}
+            className="rounded-lg bg-frost p-2 text-sm ring-1 ring-line">
+            <option value={1}>1 · Disampel</option><option value={0}>0 · Tidak disampel</option>
+          </select>
+          <button type="button" disabled={sample.isPending || !sourceId.trim()} onClick={()=>sample.mutate()}
+            className="rounded-lg bg-teal px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-40">Simpan flag</button>
+        </div>
+      </div>
+
+      <div className="panel mt-6 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/70 p-4">
+          <h2 className="font-display text-lg font-semibold">Log aktivitas anotator & validator</h2>
+          <select aria-label="Filter pengguna" value={logUser} onChange={(e)=>setLogUser(e.target.value)}
+            className="rounded-lg bg-frost p-2 text-sm ring-1 ring-line">
+            <option value="">Semua pengguna</option>
+            {data.profiles.map((p)=><option key={p.id} value={p.id}>{p.full_name || p.email}</option>)}
+          </select>
+        </div>
+        {activity.error && <p role="alert" className="p-4 text-sm">Gagal memuat log: {activity.error.message}</p>}
+        <div className="max-h-96 overflow-auto">
+          <table className="w-full min-w-[600px] text-left text-xs">
+            <thead><tr className="border-b border-line/70"><th className="p-3">Waktu</th><th className="p-3">Pengguna</th><th className="p-3">Peran</th><th className="p-3">Item</th><th className="p-3">Aksi</th></tr></thead>
+            <tbody>{(activity.data ?? []).map((event)=><tr key={event.id} className="border-b border-line/50">
+              <td className="p-3">{new Date(event.occurred_at).toLocaleString("id-ID")}</td>
+              <td className="p-3">{data.profiles.find((p)=>p.id===event.actor_id)?.full_name || event.actor_id || "system"}</td>
+              <td className="p-3">{event.actor_role}</td>
+              <td className="p-3 font-mono">{event.item_type} · {event.source_question_id || event.source_table_id || "ID lama"}</td>
+              <td className="p-3">{event.action}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+        <p className="p-3 text-xs text-mist">100 aktivitas terbaru. Before/after lengkap tersimpan di database untuk audit.</p>
+      </div>
+
       <p className="mt-3 font-mono text-[11px] text-mist">
-        Anggota baru bergabung lewat halaman pendaftaran dan otomatis berperan Anotator.
+        Anggota baru dapat mendaftar sendiri, tetapi tidak memperoleh peran kerja otomatis. Admin menetapkan Anotator, Validator, atau Admin dari halaman ini.
       </p>
     </section>
   );

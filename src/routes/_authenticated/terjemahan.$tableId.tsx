@@ -5,6 +5,9 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeading } from "@/components/AppShell";
 import { useCurrentUser } from "@/hooks/useAuth";
+import { HiTabTablePreview } from "@/components/HiTabTablePreview";
+import { HiTabQaLogic } from "@/components/HiTabQaLogic";
+import { useWorkOpen } from "@/hooks/useWorkOpen";
 
 export const Route = createFileRoute("/_authenticated/terjemahan/$tableId")({
   head: () => ({
@@ -46,7 +49,7 @@ function TranslationWorkspace() {
       const [table, cells, pairs] = await Promise.all([
         supabase
           .from("tqa_tables")
-          .select("id, code, title_en, title_id")
+          .select("id, code, title_en, title_id, original_table, annotated_table, annotate_flag, original_table_id, annotator_id")
           .eq("id", tableId)
           .maybeSingle(),
         supabase
@@ -56,14 +59,16 @@ function TranslationWorkspace() {
           .order("position"),
         supabase
           .from("qa_pairs")
-          .select("id, position, question_en, answer_en, question_id, answer_id, status")
+          .select("id, position, question_en, answer_en, question_id, answer_id, status, original_qa, original_question_id, annotate_flag, annotator_id")
+          .eq("annotate_flag",1)
           .eq("table_id", tableId)
           .order("position"),
       ]);
       if (table.error) throw table.error;
       if (cells.error) throw cells.error;
       if (pairs.error) throw pairs.error;
-      return { table: table.data, cells: cells.data ?? [], pairs: pairs.data ?? [] };
+      const visiblePairs = isAdmin ? (pairs.data ?? []) : (pairs.data ?? []).filter((p) => p.annotator_id === userId);
+      return { table: table.data, cells: cells.data ?? [], pairs: visiblePairs };
     },
   });
 
@@ -87,27 +92,15 @@ function TranslationWorkspace() {
   const saveCells = useMutation({
     mutationFn: async () => {
       if (!data) return;
-      const title = titleDraft.trim();
-      const titleUpdate = await supabase
-        .from("tqa_tables")
-        .update({ title_id: title || null })
-        .eq("id", tableId);
-      if (titleUpdate.error) throw titleUpdate.error;
-
+      const changes: Record<string,string> = {};
       for (const cell of data.cells) {
-        const value = (cellDrafts[cell.id] ?? "").trim();
-        if (value === (cell.target_text ?? "")) continue;
-        const { error } = await supabase
-          .from("table_cells")
-          .update({
-            target_text: value || null,
-            status: value ? "selesai" : "draft",
-            updated_by: userId ?? null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", cell.id);
-        if (error) throw error;
+        const value=(cellDrafts[cell.id] ?? "").trim();
+        if (value !== (cell.target_text ?? "")) changes[cell.id]=value;
       }
+      const {error}=await supabase.rpc("hitab_save_table_translation",{
+        _table_id:tableId,_title:titleDraft.trim(),_cells:changes,
+      });
+      if (error) throw error;
     },
     onSuccess: () => {
       toast.success("Terjemahan header & kolom tersimpan.");
@@ -129,11 +122,8 @@ function TranslationWorkspace() {
         .update({
           question_id: question || null,
           answer_id: answer || null,
-          status: question && answer ? "selesai" : "draft",
-          updated_by: userId ?? null,
-          updated_at: new Date().toISOString(),
         })
-        .eq("id", pairId);
+        .eq("id", pairId).eq("annotate_flag",1);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -145,6 +135,9 @@ function TranslationWorkspace() {
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Gagal menyimpan."),
   });
+
+  useWorkOpen("table", tableId, allowed && !!data?.table && data.table.annotate_flag === 1 && (isAdmin || data.table.annotator_id === userId));
+  useWorkOpen("qa", data?.pairs[activePair]?.id, allowed && !!data?.table && data.pairs[activePair]?.annotate_flag === 1 && (isAdmin || data.pairs[activePair]?.annotator_id === userId));
 
   if (rolesLoading) return <p className="label-mono">Memuat peran…</p>;
   if (rolesError) return <p role="alert">Gagal memuat peran.</p>;
@@ -163,10 +156,8 @@ function TranslationWorkspace() {
 
   const pair = data.pairs[activePair];
   const pairDraft = pair ? (pairDrafts[pair.id] ?? { question: "", answer: "" }) : null;
-
-  const headerCells = data.cells.filter((cell) => cell.kind === "header");
-  const columnCells = data.cells.filter((cell) => cell.kind !== "header");
-  const columnCount = Math.max(headerCells.length, 1);
+  const tableCanEdit = data.table.annotate_flag === 1 && (isAdmin || data.table.annotator_id === userId);
+  const pairCanEdit = !!pair && pair.annotate_flag === 1 && (isAdmin || pair.annotator_id === userId);
 
   return (
     <section>
@@ -180,6 +171,7 @@ function TranslationWorkspace() {
         }
       />
 
+      {!tableCanEdit && <p role="status" className="mb-4 rounded-lg bg-amber/10 p-3 text-sm">Tabel ini tidak ditugaskan kepada Anda atau tidak termasuk sampel tabel. QA yang ditugaskan kepada Anda tetap dapat diterjemahkan.</p>}
       <div className="panel mb-4 p-4">
         <div className="label-mono mb-2">Judul tabel</div>
         <div className="grid gap-3 md:grid-cols-2">
@@ -188,6 +180,7 @@ function TranslationWorkspace() {
           </div>
           <input
             value={titleDraft}
+            disabled={!tableCanEdit}
             onChange={(e) => setTitleDraft(e.target.value)}
             placeholder="Terjemahan judul (ID)"
             className="rounded-lg bg-frost px-3 py-2 text-sm ring-1 ring-line outline-none focus:ring-2 focus:ring-teal/50"
@@ -209,6 +202,7 @@ function TranslationWorkspace() {
             <div className="border-b border-line/50 px-2 py-1.5">
               <input
                 value={cellDrafts[cell.id] ?? ""}
+                disabled={!tableCanEdit}
                 onChange={(e) =>
                   setCellDrafts((prev) => ({ ...prev, [cell.id]: e.target.value }))
                 }
@@ -221,7 +215,7 @@ function TranslationWorkspace() {
         <div className="flex items-center gap-2 px-4 py-3">
           <button
             onClick={() => saveCells.mutate()}
-            disabled={saveCells.isPending}
+            disabled={saveCells.isPending || !tableCanEdit}
             className="rounded-lg bg-teal px-4 py-2 text-sm font-semibold text-primary-foreground ring-1 ring-teal/40 transition-colors hover:bg-teal/90 disabled:opacity-60"
           >
             {saveCells.isPending ? "Menyimpan…" : "Simpan header & kolom"}
@@ -233,60 +227,11 @@ function TranslationWorkspace() {
         </div>
       </div>
 
-      <div className="panel mt-6 overflow-hidden">
-        <div className="flex items-center gap-2 border-b border-line/70 px-4 py-2">
-          <div className="label-mono">Pratinjau tabel</div>
-          <span className="ml-auto font-mono text-[10px] text-mist">
-            langsung mengikuti terjemahan Anda
-          </span>
-        </div>
-        <div className="p-4">
-          <div className="font-display mb-3 text-sm font-semibold">
-            {titleDraft.trim() || data.table.title_en}
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr>
-                  {headerCells.map((cell) => (
-                    <th
-                      key={cell.id}
-                      className="border border-line/60 bg-teal/10 px-3 py-2 text-left font-mono text-xs font-semibold text-teal"
-                    >
-                      {(cellDrafts[cell.id] ?? "").trim() || cell.source_text}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {Array.from(
-                  { length: Math.ceil(columnCells.length / columnCount) || 0 },
-                  (_, rowIndex) => (
-                    <tr key={rowIndex}>
-                      {columnCells
-                        .slice(rowIndex * columnCount, rowIndex * columnCount + columnCount)
-                        .map((cell) => (
-                          <td key={cell.id} className="border border-line/50 px-3 py-2">
-                            {(cellDrafts[cell.id] ?? "").trim() || (
-                              <span className="text-mist">{cell.source_text}</span>
-                            )}
-                          </td>
-                        ))}
-                    </tr>
-                  ),
-                )}
-              </tbody>
-            </table>
-          </div>
-          {!columnCells.length && (
-            <p className="mt-3 font-mono text-[11px] text-mist">
-              Tabel ini baru memiliki baris header.
-            </p>
-          )}
-        </div>
+      <div className="panel mt-6 space-y-5 p-4">
+        <HiTabTablePreview snapshot={data.table.original_table} label="Tabel asli (EN)" />
+        <HiTabTablePreview snapshot={data.table.annotated_table} label="Tabel setelah anotasi (ID) · tersimpan" />
+        <p className="text-xs text-mist">Struktur hierarki dan merged regions berasal dari JSON asli; penyimpanan baru memperbarui snapshot terjemahan.</p>
       </div>
-
-
 
       {pair && pairDraft ? (
         <div className="relative mt-6">
@@ -299,7 +244,9 @@ function TranslationWorkspace() {
               </span>
             </div>
 
-            <div className="mb-1 font-mono text-xs text-mist">Q · EN</div>
+            <div className="mb-2 font-mono text-[11px] text-mist">ID asli QA: {pair.original_question_id ?? "Belum diimpor"}</div>
+            <HiTabQaLogic original={pair.original_qa} />
+            <div className="mb-1 mt-4 font-mono text-xs text-mist">Q · EN</div>
             <div className="mb-3 text-sm">{pair.question_en}</div>
             <div className="mb-1 font-mono text-xs text-mist">Q · ID</div>
             <textarea
@@ -311,6 +258,7 @@ function TranslationWorkspace() {
                 }))
               }
               rows={2}
+              disabled={!pairCanEdit}
               placeholder="Terjemahan pertanyaan…"
               className="mb-4 w-full rounded-lg bg-frost px-3 py-2 text-sm ring-1 ring-line outline-none focus:ring-2 focus:ring-teal/50"
             />
@@ -327,6 +275,7 @@ function TranslationWorkspace() {
                 }))
               }
               rows={2}
+              disabled={!pairCanEdit}
               placeholder="Terjemahan jawaban…"
               className="mb-4 w-full rounded-lg bg-frost px-3 py-2 text-sm ring-1 ring-line outline-none focus:ring-2 focus:ring-teal/50"
             />
@@ -334,7 +283,7 @@ function TranslationWorkspace() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => savePair.mutate(pair.id)}
-                disabled={savePair.isPending}
+                disabled={savePair.isPending || !pairCanEdit}
                 className="rounded-lg bg-teal px-4 py-2 text-sm font-semibold text-primary-foreground ring-1 ring-teal/40 transition-colors hover:bg-teal/90 disabled:opacity-60"
               >
                 {savePair.isPending ? "Menyimpan…" : "Simpan"}
