@@ -56,7 +56,8 @@ function WorkspaceListPage() {
       />
 
       <div className="panel overflow-hidden">
-        <div className="grid grid-cols-[7rem_1fr_8rem_8rem] gap-3 border-b border-line/70 px-4 py-2">
+        <div className="overflow-x-auto">
+        <div className="grid min-w-[40rem] grid-cols-[25%_1fr_8rem_8rem] gap-3 border-b border-line/70 px-4 py-2">
           <span className="label-mono">Kode</span>
           <span className="label-mono">Judul sumber</span>
           <span className="label-mono">Header/kolom</span>
@@ -79,7 +80,7 @@ function WorkspaceListPage() {
               key={table.id}
               to="/terjemahan/$tableId"
               params={{ tableId: table.id }}
-              className="grid grid-cols-[7rem_1fr_8rem_8rem] items-center gap-3 border-b border-line/50 px-4 py-3 text-sm transition-colors last:border-b-0 hover:bg-ink/5"
+              className="grid min-w-[40rem] grid-cols-[25%_1fr_8rem_8rem] items-center gap-3 border-b border-line/50 px-4 py-3 text-sm transition-colors last:border-b-0 hover:bg-ink/5"
             >
               <span className="font-mono text-xs text-cyan">{table.code}</span>
               <span className="min-w-0">
@@ -97,6 +98,7 @@ function WorkspaceListPage() {
             </Link>
           );
         })}
+        </div>
       </div>
     </section>
   );
