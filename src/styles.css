@@ -1,0 +1,194 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design system: "Ledger prismatic" — panel anotasi HiTab TQA.
+ * Frosted paper surfaces, ink text, teal aksi, tipografi Space Grotesk /
+ * IBM Plex Sans / IBM Plex Mono. Semua warna dalam oklch.
+ */
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+
+  --font-display: var(--font-display-family);
+  --font-body: var(--font-body-family);
+  --font-mono: var(--font-mono-family);
+  --font-sans: var(--font-body-family);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-mist: var(--mist);
+  --color-frost: var(--frost);
+  --color-line: var(--line);
+  --color-teal: var(--teal);
+  --color-amber: var(--amber);
+  --color-cyan: var(--cyan);
+
+  --color-chart-1: var(--teal);
+  --color-chart-2: var(--cyan);
+  --color-chart-3: var(--amber);
+  --color-chart-4: var(--mist);
+  --color-chart-5: var(--ink);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --ease-ledger: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+:root {
+  --radius: 0.75rem;
+
+  --font-display-family: "Space Grotesk", ui-sans-serif, sans-serif;
+  --font-body-family: "IBM Plex Sans", ui-sans-serif, sans-serif;
+  --font-mono-family: "IBM Plex Mono", ui-monospace, monospace;
+
+  --paper: oklch(0.947 0.012 262);
+  --ink: oklch(0.253 0.024 272);
+  --mist: oklch(0.549 0.028 265);
+  --frost: oklch(1 0 0);
+  --line: oklch(0.845 0.024 262);
+  --teal: oklch(0.583 0.099 184);
+  --amber: oklch(0.655 0.122 68);
+  --cyan: oklch(0.633 0.121 245);
+
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--frost);
+  --card-foreground: var(--ink);
+  --popover: var(--frost);
+  --popover-foreground: var(--ink);
+  --primary: var(--teal);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.915 0.014 262);
+  --secondary-foreground: var(--ink);
+  --muted: oklch(0.925 0.012 262);
+  --muted-foreground: var(--mist);
+  --accent: oklch(0.93 0.024 184);
+  --accent-foreground: var(--teal);
+  --destructive: oklch(0.577 0.191 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--teal);
+
+  --sidebar: oklch(0.975 0.008 262);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--teal);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.93 0.024 184);
+  --sidebar-accent-foreground: var(--teal);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--teal);
+}
+
+@keyframes ledger-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ledger-refract {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@utility prism {
+  background: linear-gradient(
+    115deg,
+    hsl(205 90% 62% / 0.12),
+    hsl(160 85% 45% / 0.1),
+    hsl(45 95% 55% / 0.12),
+    hsl(330 85% 60% / 0.1)
+  );
+  background-size: 280% 280%;
+}
+
+@utility prism-animate {
+  animation: ledger-refract 10s var(--ease-ledger) infinite;
+}
+
+@utility rise {
+  animation: ledger-rise 0.5s var(--ease-ledger) both;
+}
+
+@utility panel {
+  background-color: color-mix(in oklab, var(--frost) 72%, transparent);
+  backdrop-filter: blur(12px);
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--ink) 6%, transparent);
+}
+
+@utility label-mono {
+  font-family: var(--font-mono-family);
+  font-size: 0.625rem;
+  line-height: 1rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--mist);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-body-family);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display-family);
+    letter-spacing: -0.01em;
+  }
+}
