@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { PageHeading } from "@/components/AppShell";
 import { useCurrentUser } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { buildExportFiles, zipStored, type ExportKind, type ExportRow, type ExportStage } from "@/lib/hitabExport";
+import { buildExportFiles, qaForDownload, tableForDownload, zipStored, type ExportKind, type ExportRow, type ExportStage } from "@/lib/hitabExport";
 
 export const Route = createFileRoute("/_authenticated/ekspor")({
   head: () => ({ meta: [{ title: "Ekspor dataset — IndoHiTAB" }] }),
@@ -38,7 +38,7 @@ function DatasetExport() {
     let expected: number | null = null;
     do {
       if (cancelRef.current) throw new Error("Ekspor dibatalkan; tidak ada file parsial yang diunduh.");
-      const { data, error } = await supabase.rpc("hitab_export_page", {
+      const { data, error } = await supabase.rpc("hitab_export_page_v8", {
         _kind: kind, _stage: stageValue, _sample_only: sample,
         _limit: PAGE_SIZE, _offset: all.length,
       });
@@ -66,8 +66,18 @@ function DatasetExport() {
       const tables = await fetchKind("table", stage, sampleOnly);
       const qa = await fetchKind("qa", stage, sampleOnly);
       if (cancelRef.current) throw new Error("Ekspor dibatalkan; tidak ada file parsial yang diunduh.");
-      setProgress("Membuat arsip ZIP dan status.csv…");
-      const files = buildExportFiles(stage, sampleOnly, tables, qa, new Date().toISOString());
+      setProgress("Memeriksa kesesuaian format HiTAB v2…");
+      // Validate BEFORE recording a download request. No service-role key in browser.
+      for (const table of tables) tableForDownload(table);
+      for (const pair of qa) qaForDownload(pair, stage);
+      const { data: receipts, error: logError } = await supabase.rpc("hitab_register_download_v8", {
+        _stage: stage, _sample_only: sampleOnly, _tables: tables.length, _qa: qa.length,
+      });
+      if (logError) throw logError; // fail closed: no unlogged exports
+      const receipt = receipts?.[0];
+      if (!receipt) throw new Error("Server tidak menghasilkan tanda terima ekspor.");
+      setProgress("Membuat arsip ZIP, manifest, dan log waktu server…");
+      const files = buildExportFiles(stage, sampleOnly, tables, qa, receipt);
       const zip = zipStored(files);
       // Uint8Array may use a SharedArrayBuffer with some TS lib definitions;
       // copy into an ArrayBuffer-backed view accepted by the Blob constructor.
@@ -76,7 +86,7 @@ function DatasetExport() {
       const url = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `indohitab-${stage}-${sampleOnly ? "sample" : "all"}-${new Date().toISOString().slice(0,10)}.zip`;
+      anchor.download = `indohitab-${stage}-${sampleOnly ? "sample" : "all"}-${receipt.date_download.slice(0,10)}-${receipt.export_id.slice(0,8)}.zip`;
       document.body.appendChild(anchor);
       anchor.click(); anchor.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
@@ -98,7 +108,7 @@ function DatasetExport() {
     <p className="mb-6 max-w-3xl text-sm leading-relaxed text-mist">
       Unduh tabel sebagai file JSON terpisah dan pertanyaan–jawaban sebagai JSONL per split, dengan struktur hierarki,
       merged regions, jawaban bertipe asli, aggregation, formula, dan linked cells tetap dipertahankan.
-      Status setiap entri terdapat di <code>status.csv</code>.
+      Status setiap entri terdapat di <code>status.csv</code>; timestamp dari server dan ID ekspor terdapat di <code>download_log.json</code> dan <code>manifest.json</code>.
     </p>
     <div className="panel space-y-6 p-5">
       <fieldset disabled={running} className="space-y-3">
@@ -135,8 +145,9 @@ function DatasetExport() {
           {` ${counts.qa_waiting_for_table_final} QA sudah tervalidasi tetapi belum dapat masuk ekspor final karena tabel induknya belum final.`}
         </p>}
       <p className="text-xs text-mist">
-        QA versi saat ini/final menggunakan <code>question</code> Indonesia jika tersedia, tetapi <code>answer</code> bertipe asli tidak ditimpa;
-        teks jawaban Indonesia berada pada <code>answer_id</code>. Ekspor membaca data secara bertahap, bukan snapshot transaksi tunggal.
+        QA versi saat ini/final menggunakan <code>question</code> dan jawaban teks tunggal dalam <code>answer</code> berbahasa Indonesia jika tersedia.
+        Jawaban numerik tetap bertipe asli. Untuk jawaban majemuk yang tidak bisa dipetakan dari satu kolom teks, periksa <code>status.csv</code>; ekspor final akan ditolak.
+        Ekspor membaca data secara bertahap, bukan snapshot transaksi tunggal.
         Hindari menjalankannya ketika anotator/validator sedang mengubah data.
       </p>
       <div className="flex flex-wrap gap-3">

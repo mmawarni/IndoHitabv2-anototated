@@ -155,6 +155,7 @@ export type Database = {
       }
       qa_pairs: {
         Row: {
+          data_source_id: number | null
           original_question_id: string | null
           original_qa: Json | null
           annotated_qa: Json | null
@@ -175,6 +176,7 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          data_source_id?: number | null
           original_question_id?: string | null
           original_qa?: Json | null
           annotated_qa?: Json | null
@@ -195,6 +197,7 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          data_source_id?: number | null
           original_question_id?: string | null
           original_qa?: Json | null
           annotated_qa?: Json | null
@@ -276,6 +279,7 @@ export type Database = {
       }
       tqa_tables: {
         Row: {
+          data_source_id: number | null
           original_table_id: string | null
           original_table: Json | null
           annotated_table: Json | null
@@ -291,6 +295,7 @@ export type Database = {
           title_id: string | null
         }
         Insert: {
+          data_source_id?: number | null
           original_table_id?: string | null
           original_table?: Json | null
           annotated_table?: Json | null
@@ -306,6 +311,7 @@ export type Database = {
           title_id?: string | null
         }
         Update: {
+          data_source_id?: number | null
           original_table_id?: string | null
           original_table?: Json | null
           annotated_table?: Json | null
@@ -385,6 +391,44 @@ export type Database = {
           payload: Json
           total_count: number
         }[]
+      }
+      hitab_export_page_v8: {
+        Args: { _kind: string; _stage?: string; _sample_only?: boolean; _limit?: number; _offset?: number }
+        Returns: {
+          source_id: string
+          parent_source_id: string | null
+          dataset_split: string | null
+          annotate_flag: number
+          work_status: string
+          payload: Json
+          total_count: number
+          translated_question: string | null
+          translated_answer: string | null
+          data_source_id: number | null
+          data_source_code: string | null
+        }[]
+      }
+      hitab_register_download_v8: {
+        Args: { _stage: string; _sample_only: boolean; _tables: number; _qa: number }
+        Returns: { export_id: string; date_download: string; server_time: string }[]
+      }
+      hitab_dashboard_breakdown_v8: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          data_source_id: number | null
+          data_source_code: string
+          data_source_name: string
+          tables_all: number
+          tables_current: number
+          tables_done: number
+          qa_all: number
+          qa_current: number
+          qa_done: number
+        }[]
+      }
+      hitab_set_table_data_source: {
+        Args: { _original_table_id: string; _source_id: number | null }
+        Returns: undefined
       }
       hitab_export_summary: {
         Args: { _sample_only?: boolean }

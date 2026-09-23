@@ -1,4 +1,4 @@
-/** Pure export helpers: no Supabase credentials, no npm ZIP dependency. */
+/** Canonical HiTAB-v2 export: provenance lives OUTSIDE table JSON and QA JSONL. */
 export type ExportStage = "original" | "current" | "final";
 export type ExportKind = "table" | "qa";
 export type ExportStatus = "unstarted" | "draft" | "translated" | "in_review" | "validated";
@@ -11,21 +11,76 @@ export interface ExportRow {
   work_status: ExportStatus;
   payload: Record<string, unknown>;
   total_count: number;
+  translated_question?: string | null;
+  translated_answer?: string | null;
+  data_source_id?: number | null;
+  data_source_code?: string | null;
 }
 export interface ExportEntry { name: string; contents: string }
+export interface ExportReceipt {
+  export_id: string;
+  date_download: string; // ISO-8601 issued by PostgreSQL, not device clock.
+  server_time: string;
+}
 
-const encode = (value: string) => encodeURIComponent(value).replace(/\./g, "%2E");
+const tableFields = ["title", "top_root", "left_root", "texts", "merged_regions", "top_header_rows_num", "left_header_columns_num"] as const;
 
-/** Retain HiTAB answer arrays, numeric values, formulas, linked cells, and IDs.
- * For translated snapshots, map Indonesian question into the canonical `question`
- * field. Keep translated answer text as `answer_id` because changing the typed
- * `answer` array would corrupt numeric and aggregation supervision.
+/** Use the ORIGINAL file basename; percent-encoding changes HiTAB table IDs.
+ * A slash/backslash/control character is unsafe as a ZIP path segment: reject it.
  */
-export function qaForDownload(row: ExportRow, stage: ExportStage): Record<string, unknown> {
+export function originalTableFilename(id: string): string {
+  if (!id || id === "." || id === ".." || /[\\/\x00-\x1f\x7f]/.test(id)) {
+    throw new Error(`Unsafe original HiTAB table ID: ${JSON.stringify(id)}`);
+  }
+  return `indohitab/table/${id}.json`;
+}
+
+export function tableForDownload(row: ExportRow): Record<string, unknown> {
+  if (!row.payload || typeof row.payload !== "object" || Array.isArray(row.payload)) {
+    throw new Error(`Missing table JSON for ${row.source_id}`);
+  }
   const value = structuredClone(row.payload);
+  for (const key of tableFields) {
+    if (!(key in value)) throw new Error(`Table ${row.source_id} is missing HiTAB-v2 key ${key}`);
+  }
+  if (!Array.isArray(value.texts) || !Array.isArray(value.merged_regions)) {
+    throw new Error(`Table ${row.source_id} has malformed texts or merged_regions`);
+  }
+  // Retain only canonical schema fields; no download timestamps inside original JSON.
+  return Object.fromEntries(tableFields.map((name) => [name, value[name]]));
+}
+
+/** Only the singleton textual answer can be mapped safely from one text box.
+ * Numeric answers remain typed. Multi-answer text requires per-answer editing,
+ * NOT guessing via splitting on commas; report it in status.csv instead.
+ */
+export function answerTranslationState(row: ExportRow, stage: ExportStage): string {
+  if (stage === "original" || !row.translated_answer?.trim()) return "source_preserved";
+  const answers = row.payload?.answer;
+  if (!Array.isArray(answers) || !answers.length) return "requires_structured_review";
+  if (answers.every((item) => typeof item === "number")) return "typed_value_preserved";
+  if (answers.length !== 1) return "requires_structured_review";
+  return typeof answers[0] === "string" ? "translated_single_text" : "typed_value_preserved";
+}
+
+export function qaForDownload(row: ExportRow, stage: ExportStage): Record<string, unknown> {
+  if (!row.payload || typeof row.payload !== "object" || Array.isArray(row.payload)) {
+    throw new Error(`Missing QA JSON for ${row.source_id}`);
+  }
+  const value = structuredClone(row.payload);
+  if (value.id !== row.source_id || value.table_id !== row.parent_source_id || !Array.isArray(value.answer)) {
+    throw new Error(`QA ${row.source_id} has inconsistent ID, table ID, or answer type`);
+  }
+  // Earlier snapshots added question_id/answer_id. The v2 schema contains neither.
+  delete value.question_id;
+  delete value.answer_id;
   if (stage !== "original") {
-    if (typeof value.question_id === "string" && value.question_id.trim()) {
-      value.question = value.question_id;
+    if (row.translated_question?.trim()) value.question = row.translated_question.trim();
+    if (answerTranslationState(row, stage) === "translated_single_text") {
+      value.answer = [row.translated_answer!.trim()];
+    }
+    if (stage === "final" && answerTranslationState(row, stage) === "requires_structured_review") {
+      throw new Error(`QA ${row.source_id} has multiple answers; individual answer translations need review before final export`);
     }
   }
   return value;
@@ -33,68 +88,81 @@ export function qaForDownload(row: ExportRow, stage: ExportStage): Record<string
 
 export function csvValue(value: string | number | null): string {
   const text = value === null ? "" : String(value);
-  // Quoting every field prevents CSV injection when opened in a spreadsheet.
   const safe = /^[=+@\-\t\r]/.test(text) ? "'" + text : text;
   return '"' + safe.replace(/"/g, '""') + '"';
 }
 
 export function buildExportFiles(
   stage: ExportStage, sampleOnly: boolean, tables: ExportRow[], qa: ExportRow[],
-  createdAt: string,
+  receipt: ExportReceipt,
 ): ExportEntry[] {
+  if (!receipt.export_id || !Number.isFinite(Date.parse(receipt.server_time)) ||
+      !Number.isFinite(Date.parse(receipt.date_download))) {
+    throw new Error("Missing valid server-issued download audit receipt");
+  }
   const tableIds = new Set(tables.map((table) => table.source_id));
+  if (tableIds.size !== tables.length) throw new Error("Duplicate original table IDs in export");
+  if (new Set(qa.map((q) => q.source_id)).size !== qa.length) throw new Error("Duplicate original QA IDs in export");
   for (const pair of qa) {
     if (!pair.parent_source_id || !tableIds.has(pair.parent_source_id)) {
       throw new Error(`QA ${pair.source_id} has no table in this export. Nothing was downloaded.`);
     }
-    if (pair.payload.table_id !== pair.parent_source_id || pair.payload.id !== pair.source_id) {
-      throw new Error(`QA ${pair.source_id} has inconsistent original IDs. Nothing was downloaded.`);
-    }
   }
-  const prefix = "indohitab/";
   const result: ExportEntry[] = [];
   for (const table of tables) {
-    if (!table.source_id || !table.payload || typeof table.payload !== "object") throw new Error("Invalid table export row");
-    // One JSON file per table: mirrors the original /table/*.json layout.
-    result.push({ name: `${prefix}table/${encode(table.source_id)}.json`, contents: JSON.stringify(table.payload, null, 2) + "\n" });
+    result.push({ name: originalTableFilename(table.source_id), contents: JSON.stringify(tableForDownload(table), null, 2) + "\n" });
   }
   const grouped = new Map<string, string[]>();
   for (const pair of qa) {
-    if (!pair.source_id || !pair.payload || typeof pair.payload !== "object") throw new Error("Invalid QA export row");
-    const split = pair.dataset_split && ["train", "dev", "test"].includes(pair.dataset_split)
-      ? pair.dataset_split : "unspecified";
+    const split = pair.dataset_split;
+    if (!split || !["train", "dev", "test"].includes(split)) {
+      // Never fabricate an "unspecified" split in a HiTAB-v2-compatible release.
+      throw new Error(`QA ${pair.source_id} lacks its original train/dev/test split`);
+    }
     if (!grouped.has(split)) grouped.set(split, []);
     grouped.get(split)!.push(JSON.stringify(qaForDownload(pair, stage)));
   }
-  // Stable file names even if a split has no QA (zero-byte JSONL is valid).
-  for (const split of ["train", "dev", "test", "unspecified"]) {
-    if (split !== "unspecified" || grouped.has(split)) {
-      const lines = grouped.get(split) ?? [];
-      result.push({ name: `${prefix}qa/${split}_v2.jsonl`, contents: lines.length ? lines.join("\n") + "\n" : "" });
-    }
+  for (const split of ["train", "dev", "test"]) {
+    const lines = grouped.get(split);
+    if (lines) result.push({ name: `indohitab/qa/${split}_v2.jsonl`, contents: lines.join("\n") + "\n" });
   }
   const csvRows: (string | number | null)[][] = [
-    ["kind", "source_id", "table_id", "split", "annotate_flag", "work_status", "export_stage"],
-    ...tables.map((t): (string | number | null)[] => ["table", t.source_id, t.source_id, null, t.annotate_flag, t.work_status, stage]),
-    ...qa.map((q): (string | number | null)[] => ["qa", q.source_id, q.parent_source_id, q.dataset_split, q.annotate_flag, q.work_status, stage]),
+    ["kind", "source_id", "table_id", "split", "data_source_id", "data_source_code", "annotate_flag", "work_status", "export_stage", "answer_translation_state"],
+    ...tables.map((t): (string | number | null)[] => ["table", t.source_id, t.source_id, null, t.data_source_id ?? null, t.data_source_code ?? null, t.annotate_flag, t.work_status, stage, null]),
+    ...qa.map((q): (string | number | null)[] => ["qa", q.source_id, q.parent_source_id, q.dataset_split, q.data_source_id ?? null, q.data_source_code ?? null, q.annotate_flag, q.work_status, stage, answerTranslationState(q, stage)]),
   ];
-  result.push({ name: `${prefix}status.csv`, contents: csvRows.map((row) => row.map(csvValue).join(",")).join("\r\n") + "\r\n" });
-  result.push({ name: `${prefix}manifest.json`, contents: JSON.stringify({
-    export_stage: stage, sampled_only: sampleOnly, exported_at: createdAt,
+  result.push({ name: "indohitab/status.csv", contents: csvRows.map((row) => row.map(csvValue).join(",")).join("\r\n") + "\r\n" });
+  const downloadLog = {
+    export_id: receipt.export_id,
+    date_download: receipt.date_download,
+    server_time: receipt.server_time,
+    event_type: "download_requested",
+    note: "PostgreSQL records a download request, not proof of file receipt or an atomic dataset snapshot.",
+    export_stage: stage,
+    sampled_only: sampleOnly,
+    tables: tables.length,
+    qa: qa.length,
+  };
+  result.push({ name: "indohitab/download_log.json", contents: JSON.stringify(downloadLog, null, 2) + "\n" });
+  result.push({ name: "indohitab/manifest.json", contents: JSON.stringify({
+    export_id: receipt.export_id,
+    date_download: receipt.date_download,
+    server_time: receipt.server_time,
+    export_stage: stage, sampled_only: sampleOnly,
     tables: tables.length, qa: qa.length,
-    description: "Table JSON objects and QA JSONL retain the original HiTAB structure and metadata.",
+    multi_answer_qa_needing_review: qa.filter(q => answerTranslationState(q, stage) === "requires_structured_review").length,
+    original_format: "HiTAB-v2 table/*.json + qa/{split}_v2.jsonl; metadata is stored outside the canonical dataset files.",
     notes: [
-      "Current includes unfinished records; see status.csv. Untranslated fields can remain in the original language.",
-      "For current/final QA, question is Indonesian when translated; the typed original answer array and all original formulas/linked cells are preserved. answer_id is the Indonesian answer text.",
-      "Final contains only completed table and QA reviews with confirmed QA logic. QA without a finalized parent table are omitted.",
-      "A sampled QA may require its unsampled parent table for context; such parent tables are included and marked annotate_flag=0 in status.csv.",
-      "Exports are paginated live reads, NOT an atomic database snapshot. Avoid exporting while participants are making edits.",
-      "Entries lacking preserved original JSON/source ID cannot be exported; review the on-screen missing-source counts.",
+      "Original objects are never modified. Translated text replaces question and singleton textual answer in canonical QA keys.",
+      "Numeric answers and formula/linked-cell supervision retain their original typed structure.",
+      "Multiple textual answers are not split from a single translation field: check status.csv.",
+      "Current includes unfinished items; final requires completed table/QA reviews and confirmed QA logic.",
+      "Reads are paginated live, not one atomic database snapshot. Pause edits before research release.",
+      "date_download is PostgreSQL request time, not proof of ZIP receipt by the user.",
     ],
   }, null, 2) + "\n" });
   return result;
 }
-
 // ZIP32 STORED (uncompressed) writer, UTF-8 names; avoids adding a dependency.
 // CRC32 checksum + central directory are required by ZIP readers.
 const utf8 = new TextEncoder();

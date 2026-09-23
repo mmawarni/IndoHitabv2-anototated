@@ -18,6 +18,8 @@ import urllib.request
 import zipfile
 
 NAMESPACE = uuid.UUID("c9e4e1a7-27a7-4bac-a7a6-c7bc1289ca37")
+# Numeric IDs match the migration catalog. NSC (1) and NSF (2) are distinct.
+SOURCE_CODE_IDS = {"nsc": 1, "nsf": 2, "statcan": 3, "totto": 4}
 
 def stable(kind, value):
     return str(uuid.uuid5(NAMESPACE, kind + ":" + str(value)))
@@ -41,12 +43,19 @@ def read_zip(path):
     if len(set(ids))!=len(ids): raise ValueError("Duplicate original QA IDs across splits")
     return table_json,pairs
 
-def prepare_tables(tables,selected):
+def prepare_tables(tables,selected,pairs=()):
+    # Infer only from explicit QA table_source metadata, never from filenames.
+    by_id = collections.defaultdict(set)
+    for _,qa in pairs:
+        label = str(qa.get("table_source", "")).strip().lower()
+        if label in SOURCE_CODE_IDS:
+            by_id[qa["table_id"]].add(SOURCE_CODE_IDS[label])
     for source_id in sorted(selected):
         original=tables[source_id]
         yield {"id":stable("table",source_id),"code":"HITAB:"+source_id,
                "original_table_id":source_id,"title_en":str(original["title"]),
-               "original_table":original,"annotated_table":original,"annotate_flag":1}
+               "original_table":original,"annotated_table":original,"annotate_flag":1,
+               "data_source_id":next(iter(by_id[source_id])) if len(by_id[source_id])==1 else None}
 
 def prepare_cells(tables,selected):
     for source_id in sorted(selected):
@@ -74,7 +83,8 @@ def prepare_qa(pairs,selected):
         yield {"id":stable("qa",qa["id"]),"table_id":stable("table",tid),
                "original_question_id":qa["id"],"position":position,
                "question_en":str(qa["question"]),"answer_en":answer_en,
-               "original_qa":qa,"dataset_split":split,"annotate_flag":1}
+               "original_qa":qa,"dataset_split":split,"annotate_flag":1,
+               "data_source_id":SOURCE_CODE_IDS.get(str(qa.get("table_source", "")).strip().lower())}
 
 def batches(records,size):
     chunk=[]
@@ -132,7 +142,7 @@ def main():
     url=os.environ.get("SUPABASE_URL","").strip();key=os.environ.get("SUPABASE_SERVICE_ROLE_KEY","").strip()
     if not url.startswith("https://") or not key:
         raise SystemExit("Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in your LOCAL terminal; do NOT use VITE_* or commit secrets.")
-    for table,records in (("tqa_tables",prepare_tables(tables,selected)),
+    for table,records in (("tqa_tables",prepare_tables(tables,selected,pairs)),
                           ("table_cells",prepare_cells(tables,selected)),
                           ("qa_pairs",prepare_qa(pairs,selected))):
         print("Inserting",table,flush=True)

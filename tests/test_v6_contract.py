@@ -31,7 +31,7 @@ class V6Contract(unittest.TestCase):
     def test_role_set_and_scoped_dashboard(self):
         self.assertIn('admin_set_user_roles', ROLES)
         self.assertIn('profileRoles.includes(r)', ROLES)
-        self.assertIn('queryKey:["progres",userId', DASH)
+        self.assertIn('queryKey: ["dashboard-breakdown-v8", userId', DASH)
         self.assertIn('s.worker AND t.annotator_id=auth.uid()', SQL)
         self.assertIn('s.worker AND q.annotator_id=auth.uid()', SQL)
         self.assertIn('q.annotate_flag=1 AND public.hitab_is_assigned_annotator', SQL)

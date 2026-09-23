@@ -54,6 +54,16 @@ class ImporterTests(unittest.TestCase):
         self.assertIsInstance(pair['original_qa']['answer'],list)
         self.assertIsInstance(pair['original_qa']['answer'][0],float)
 
+    def test_datasource_id_uses_explicit_source_and_never_confuses_nsc_nsf(self):
+        tables, pairs = importer.read_zip(self.path)
+        pairs[0][1]['table_source'] = 'nsf'
+        table = list(importer.prepare_tables(tables, {'t-A'}, pairs))[0]
+        qa = list(importer.prepare_qa(pairs, {'t-A'}))[0]
+        self.assertEqual(table['data_source_id'], 2)
+        self.assertEqual(qa['data_source_id'], 2)
+        self.assertEqual(importer.SOURCE_CODE_IDS['nsc'], 1)
+        self.assertEqual(importer.SOURCE_CODE_IDS['nsf'], 2)
+
     def test_cell_coordinates_are_not_inferred_from_flat_position(self):
         tables,_=importer.read_zip(self.path)
         cells=list(importer.prepare_cells(tables,{'t-A'}))
