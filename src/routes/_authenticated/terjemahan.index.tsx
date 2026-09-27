@@ -118,7 +118,7 @@ function WorkspaceListPage() {
       </div>
 
       <div className="panel overflow-x-auto">
-        <div className="grid min-w-[900px] grid-cols-[7rem_5rem_5rem_1fr_8rem_8rem] gap-3 border-b border-line/70 px-4 py-2">
+        <div className="grid grid-cols-[15%_8%_8%_minmax(0,1fr)_15%_15%] gap-3 border-b border-line/70 px-4 py-2">
           <span className="label-mono">Kode</span>
           <span className="label-mono">Batch</span>
           <span className="label-mono">Pilot</span>
@@ -141,7 +141,7 @@ function WorkspaceListPage() {
               key={table.id}
               to="/terjemahan/$tableId"
               params={{ tableId: table.id }}
-              className="grid min-w-[900px] grid-cols-[7rem_5rem_5rem_1fr_8rem_8rem] items-center gap-3 border-b border-line/50 px-4 py-3 text-sm transition-colors last:border-b-0 hover:bg-ink/5"
+              className="grid grid-cols-[15%_8%_8%_minmax(0,1fr)_15%_15%] items-center gap-3 border-b border-line/50 px-4 py-3 text-sm transition-colors last:border-b-0 hover:bg-ink/5"
             >
               <span className="font-mono text-xs text-cyan">{table.code}</span>
               <span className="font-mono text-xs">{table.batch_no ?? "—"}</span>
@@ -169,7 +169,7 @@ function WorkspaceListPage() {
         })}
 
         {!visibleTables.length && (
-          <div className="min-w-[900px] px-4 py-8 text-center text-sm text-mist">
+          <div className="px-4 py-8 text-center text-sm text-mist">
             Tidak ada tabel yang cocok dengan filter batch/pilot ini.
           </div>
         )}
