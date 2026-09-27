@@ -21,6 +21,20 @@ export const Route = createFileRoute("/_authenticated/terjemahan/")({
 
 type PilotMode = "all" | "pilot" | "nonpilot";
 
+const FETCH_PAGE = 1000;
+
+async function fetchAll<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += FETCH_PAGE) {
+    const { data, error } = await page(from, from + FETCH_PAGE - 1);
+    if (error) throw error;
+    rows.push(...(data ?? []));
+    if (!data || data.length < FETCH_PAGE) return rows;
+  }
+}
+
 function WorkspaceListPage() {
   const { userId, isAdmin, isAnotator, isValidator, rolesLoading, rolesError } = useCurrentUser();
   const allowed = isAdmin || isAnotator || isValidator;
@@ -28,24 +42,49 @@ function WorkspaceListPage() {
   const [pilotMode, setPilotMode] = useState<PilotMode>("all");
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["daftar-tabel-v9", userId],
+    queryKey: ["daftar-tabel-v10", userId, isAdmin],
     enabled: allowed,
     queryFn: async () => {
-      const [tables, cells, qa] = await Promise.all([
-        supabase
-          .from("tqa_tables")
-          .select("id, code, title_en, title_id, annotate_flag, annotator_id, batch_no, is_pilot")
-          .order("batch_no", { ascending: true, nullsFirst: false })
-          .order("code"),
-        supabase.from("table_cells").select("id, table_id, target_text"),
-        supabase
-          .from("qa_pairs")
-          .select("id, table_id, question_id, answer_id, annotate_flag, annotator_id"),
+      // Supabase caps each request at 1000 rows, so every list is fetched page by page.
+      const [tables, qa] = await Promise.all([
+        fetchAll((from, to) =>
+          supabase
+            .from("tqa_tables")
+            .select("id, code, title_en, title_id, annotate_flag, annotator_id, batch_no, is_pilot")
+            .order("batch_no", { ascending: true, nullsFirst: false })
+            .order("code")
+            .order("id")
+            .range(from, to),
+        ),
+        fetchAll((from, to) => {
+          let query = supabase
+            .from("qa_pairs")
+            .select("id, table_id, question_id, answer_id, annotate_flag, annotator_id")
+            .eq("annotate_flag", 1);
+          if (!isAdmin) query = query.eq("annotator_id", userId!);
+          return query.order("id").range(from, to);
+        }),
       ]);
-      if (tables.error) throw tables.error;
-      if (cells.error) throw cells.error;
-      if (qa.error) throw qa.error;
-      return { tables: tables.data ?? [], cells: cells.data ?? [], qa: qa.data ?? [] };
+
+      // Cell progress is only shown for tables assigned for header translation.
+      const cellTableIds = tables
+        .filter((t) => t.annotate_flag === 1 && (isAdmin || t.annotator_id === userId))
+        .map((t) => t.id);
+      const cells = [];
+      for (let i = 0; i < cellTableIds.length; i += 100) {
+        const ids = cellTableIds.slice(i, i + 100);
+        cells.push(
+          ...(await fetchAll((from, to) =>
+            supabase
+              .from("table_cells")
+              .select("id, table_id, target_text")
+              .in("table_id", ids)
+              .order("id")
+              .range(from, to),
+          )),
+        );
+      }
+      return { tables, cells, qa };
     },
   });
 
