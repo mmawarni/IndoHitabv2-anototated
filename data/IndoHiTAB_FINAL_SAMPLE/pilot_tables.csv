@@ -1,0 +1,9 @@
+table_id,table_source,qa_count,batch,is_pilot
+108,statcan,13,1,True
+675,statcan,6,2,True
+1863,statcan,6,3,True
+489,statcan,11,4,True
+2412,statcan,11,5,True
+1118,statcan,2,6,True
+1005,statcan,2,7,True
+415_totto48055-2,totto,1,8,True

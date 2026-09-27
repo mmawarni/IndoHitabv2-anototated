@@ -23,6 +23,15 @@ export interface ExportReceipt {
   server_time: string;
 }
 
+// Exactly the keys and order found in upload_hitab_v2/qa/{train,test}_v2.jsonl.
+// PostgreSQL JSONB does not preserve original object key order; construct the
+// canonical record explicitly without changing the values or adding metadata.
+const qaFields = [
+  "id", "table_id", "table_source", "sentence_id", "sub_sentence_id",
+  "sub_sentence", "question", "answer", "aggregation", "linked_cells",
+  "answer_formulas", "reference_cells_map",
+] as const;
+const qaKeys = new Set<string>(qaFields);
 const tableFields = ["title", "top_root", "left_root", "texts", "merged_regions", "top_header_rows_num", "left_header_columns_num"] as const;
 
 /** Use the ORIGINAL file basename; percent-encoding changes HiTAB table IDs.
@@ -71,9 +80,25 @@ export function qaForDownload(row: ExportRow, stage: ExportStage): Record<string
   if (value.id !== row.source_id || value.table_id !== row.parent_source_id || !Array.isArray(value.answer)) {
     throw new Error(`QA ${row.source_id} has inconsistent ID, table ID, or answer type`);
   }
-  // Earlier snapshots added question_id/answer_id. The v2 schema contains neither.
+  // Earlier database snapshots added question_id/answer_id. The v2 schema
+  // contains neither; these are only translation workspace fields.
   delete value.question_id;
   delete value.answer_id;
+  for (const key of qaFields) {
+    if (!Object.hasOwn(value, key)) {
+      throw new Error(`QA ${row.source_id} is missing source v2 key ${key}`);
+    }
+  }
+  const extra = Object.keys(value).filter((key) => !qaKeys.has(key));
+  if (extra.length) {
+    throw new Error(`QA ${row.source_id} has unexpected fields: ${extra.join(", ")}; review source schema before export`);
+  }
+  if (typeof value.question !== "string" || !Array.isArray(value.aggregation) ||
+      !Array.isArray(value.answer_formulas) ||
+      !value.linked_cells || typeof value.linked_cells !== "object" || Array.isArray(value.linked_cells) ||
+      !value.reference_cells_map || typeof value.reference_cells_map !== "object" || Array.isArray(value.reference_cells_map)) {
+    throw new Error(`QA ${row.source_id} has malformed HiTAB v2 fields`);
+  }
   if (stage !== "original") {
     if (row.translated_question?.trim()) value.question = row.translated_question.trim();
     if (answerTranslationState(row, stage) === "translated_single_text") {
@@ -82,8 +107,15 @@ export function qaForDownload(row: ExportRow, stage: ExportStage): Record<string
     if (stage === "final" && answerTranslationState(row, stage) === "requires_structured_review") {
       throw new Error(`QA ${row.source_id} has multiple answers; individual answer translations need review before final export`);
     }
+    if (stage === "final" && !row.translated_question?.trim()) {
+      throw new Error(`QA ${row.source_id} is marked final but has no reviewed Indonesian question`);
+    }
+    if (stage === "final" && value.answer.length === 1 &&
+        typeof value.answer[0] === "string" && !row.translated_answer?.trim()) {
+      throw new Error(`QA ${row.source_id} is marked final but has no reviewed Indonesian textual answer`);
+    }
   }
-  return value;
+  return Object.fromEntries(qaFields.map((field) => [field, value[field]]));
 }
 
 export function csvValue(value: string | number | null): string {
@@ -122,9 +154,15 @@ export function buildExportFiles(
     if (!grouped.has(split)) grouped.set(split, []);
     grouped.get(split)!.push(JSON.stringify(qaForDownload(pair, stage)));
   }
-  for (const split of ["train", "dev", "test"]) {
-    const lines = grouped.get(split);
-    if (lines) result.push({ name: `indohitab/qa/${split}_v2.jsonl`, contents: lines.join("\n") + "\n" });
+  // The uploaded IndoHiTAB v2 has train_v2.jsonl and test_v2.jsonl (no dev).
+  // Always include both expected filenames, even when a sampled/final export
+  // currently has zero items in one split. Zero items = an empty JSONL file.
+  // If another source actually contains dev, preserve it without inventing it.
+  for (const split of ["train", "test", "dev"]) {
+    const lines = grouped.get(split) ?? [];
+    if (split !== "dev" || lines.length > 0) {
+      result.push({ name: `indohitab/qa/${split}_v2.jsonl`, contents: lines.length ? lines.join("\n") + "\n" : "" });
+    }
   }
   const csvRows: (string | number | null)[][] = [
     ["kind", "source_id", "table_id", "split", "data_source_id", "data_source_code", "annotate_flag", "work_status", "export_stage", "answer_translation_state"],
@@ -150,8 +188,9 @@ export function buildExportFiles(
     server_time: receipt.server_time,
     export_stage: stage, sampled_only: sampleOnly,
     tables: tables.length, qa: qa.length,
+    qa_split_counts: { train: (grouped.get("train") ?? []).length, test: (grouped.get("test") ?? []).length, dev: (grouped.get("dev") ?? []).length },
     multi_answer_qa_needing_review: qa.filter(q => answerTranslationState(q, stage) === "requires_structured_review").length,
-    original_format: "HiTAB-v2 table/*.json + qa/{split}_v2.jsonl; metadata is stored outside the canonical dataset files.",
+    original_format: "IndoHiTAB v2 table/*.json + qa/train_v2.jsonl + qa/test_v2.jsonl; metadata is stored outside the canonical dataset files.",
     notes: [
       "Original objects are never modified. Translated text replaces question and singleton textual answer in canonical QA keys.",
       "Numeric answers and formula/linked-cell supervision retain their original typed structure.",

@@ -156,6 +156,8 @@ export type Database = {
       qa_pairs: {
         Row: {
           data_source_id: number | null
+          batch_no: number | null
+          is_pilot: boolean
           original_question_id: string | null
           original_qa: Json | null
           annotated_qa: Json | null
@@ -177,6 +179,8 @@ export type Database = {
         }
         Insert: {
           data_source_id?: number | null
+          batch_no?: number | null
+          is_pilot?: boolean
           original_question_id?: string | null
           original_qa?: Json | null
           annotated_qa?: Json | null
@@ -198,6 +202,8 @@ export type Database = {
         }
         Update: {
           data_source_id?: number | null
+          batch_no?: number | null
+          is_pilot?: boolean
           original_question_id?: string | null
           original_qa?: Json | null
           annotated_qa?: Json | null
@@ -280,6 +286,8 @@ export type Database = {
       tqa_tables: {
         Row: {
           data_source_id: number | null
+          batch_no: number | null
+          is_pilot: boolean
           original_table_id: string | null
           original_table: Json | null
           annotated_table: Json | null
@@ -296,6 +304,8 @@ export type Database = {
         }
         Insert: {
           data_source_id?: number | null
+          batch_no?: number | null
+          is_pilot?: boolean
           original_table_id?: string | null
           original_table?: Json | null
           annotated_table?: Json | null
@@ -312,6 +322,8 @@ export type Database = {
         }
         Update: {
           data_source_id?: number | null
+          batch_no?: number | null
+          is_pilot?: boolean
           original_table_id?: string | null
           original_table?: Json | null
           annotated_table?: Json | null
@@ -379,6 +391,41 @@ export type Database = {
           validator_id: string | null
           total_count: number
         }[]
+      }
+      admin_assign_tables_with_qa: {
+        Args: { _source_ids: string[]; _annotator_id?: string | null; _validator_id?: string | null; _change_annotator?: boolean; _change_validator?: boolean }
+        Returns: Json
+      }
+      table_assignment_queue_v9: {
+        Args: { _search?: string; _batch?: number | null; _pilot_mode?: string; _limit?: number; _offset?: number }
+        Returns: {
+          item_id: string
+          source_id: string | null
+          table_code: string
+          source_text: string
+          annotate_flag: number
+          annotator_id: string | null
+          validator_id: string | null
+          batch_no: number | null
+          is_pilot: boolean
+          qa_count: number
+          total_count: number
+        }[]
+      }
+      assignment_batch_summary_v9: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          batch_no: number
+          tables: number
+          qa: number
+          pilot_tables: number
+          pilot_qa: number
+          assigned_tables: number
+        }[]
+      }
+      admin_assign_batch_with_qa: {
+        Args: { _batch: number; _annotator_id?: string | null; _validator_id?: string | null; _change_annotator?: boolean; _change_validator?: boolean; _pilot_mode?: string }
+        Returns: Json
       }
       hitab_export_page: {
         Args: { _kind: string; _stage?: string; _sample_only?: boolean; _limit?: number; _offset?: number }

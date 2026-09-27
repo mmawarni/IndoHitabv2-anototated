@@ -7,17 +7,41 @@ import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser } from "@/hooks/useAuth";
 
 export const Route = createFileRoute("/_authenticated/penugasan")({
-  head: () => ({ meta: [{ title: "Penugasan — HiTab TQA" }] }),
+  head: () => ({ meta: [{ title: "Penugasan — IndoHiTAB" }] }),
   component: AssignmentPage,
 });
 
-type Kind = "table" | "qa";
+type PilotMode = "all" | "pilot" | "nonpilot";
 type UserOption = { id: string; full_name: string; email: string; roles: string[] };
 type QueueRow = {
-  item_id: string; source_id: string | null; table_code: string; source_text: string; annotate_flag: number;
-  annotator_id: string | null; validator_id: string | null; total_count: number;
+  item_id: string;
+  source_id: string | null;
+  table_code: string;
+  source_text: string;
+  annotate_flag: number;
+  annotator_id: string | null;
+  validator_id: string | null;
+  batch_no: number | null;
+  is_pilot: boolean;
+  qa_count: number;
+  total_count: number;
 };
-type TableAssignmentResult = { tables_assigned: number; qa_assigned: number; qa_excluded_by_sampling: number };
+type BatchSummary = {
+  batch_no: number;
+  tables: number;
+  qa: number;
+  pilot_tables: number;
+  pilot_qa: number;
+  assigned_tables: number;
+};
+type AssignmentResult = {
+  batch?: number;
+  pilot_mode?: PilotMode;
+  tables_assigned: number;
+  qa_assigned: number;
+  qa_excluded_by_sampling: number;
+};
+
 const PAGE_SIZE = 30;
 const KEEP = "__keep__";
 const NONE = "__none__";
@@ -25,18 +49,22 @@ const NONE = "__none__";
 function AssignmentPage() {
   const { isAdmin, rolesLoading, rolesError } = useCurrentUser();
   const queryClient = useQueryClient();
-  const [kind, setKind] = useState<Kind>("table");
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search.trim());
+  const [batchFilter, setBatchFilter] = useState<string>("");
+  const [pilotMode, setPilotMode] = useState<PilotMode>("all");
   const [page, setPage] = useState(0);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [bulkAnnotator, setBulkAnnotator] = useState(KEEP);
-  const [bulkValidator, setBulkValidator] = useState(KEEP);
-  // Selection is deliberately page-scoped; changing the queue clears it.
-  useEffect(() => { setSelected([]); }, [kind, deferredSearch, page]);
+
+  const [batchToAssign, setBatchToAssign] = useState<string>("");
+  const [batchPilotMode, setBatchPilotMode] = useState<PilotMode>("all");
+  const [batchAnnotator, setBatchAnnotator] = useState(KEEP);
+  const [batchValidator, setBatchValidator] = useState(KEEP);
+
+  useEffect(() => setPage(0), [deferredSearch, batchFilter, pilotMode]);
 
   const users = useQuery({
-    queryKey: ["assignment-users"], enabled: isAdmin,
+    queryKey: ["assignment-users"],
+    enabled: isAdmin,
     queryFn: async () => {
       const [profiles, roles] = await Promise.all([
         supabase.from("profiles").select("id,full_name,email,status").eq("status", "aktif").order("full_name"),
@@ -47,75 +75,97 @@ function AssignmentPage() {
       const roleMap = new Map<string, string[]>();
       for (const r of roles.data ?? []) roleMap.set(r.user_id, [...(roleMap.get(r.user_id) ?? []), r.role]);
       return (profiles.data ?? []).map((profile) => ({
-        id: profile.id, full_name: profile.full_name, email: profile.email,
+        id: profile.id,
+        full_name: profile.full_name,
+        email: profile.email,
         roles: roleMap.get(profile.id) ?? [],
       }));
     },
   });
 
-  const queue = useQuery({
-    queryKey: ["assignment-queue", kind, deferredSearch, page], enabled: isAdmin,
+  const batchSummary = useQuery({
+    queryKey: ["assignment-batch-summary-v9"],
+    enabled: isAdmin,
     queryFn: async () => {
-      const { data, error } = await supabase.rpc("assignment_queue", {
-        _kind: kind, _search: deferredSearch, _limit: PAGE_SIZE, _offset: page * PAGE_SIZE,
+      const { data, error } = await supabase.rpc("assignment_batch_summary_v9");
+      if (error) throw error;
+      return (data ?? []) as BatchSummary[];
+    },
+  });
+
+  const queue = useQuery({
+    queryKey: ["table-assignment-queue-v9", deferredSearch, batchFilter, pilotMode, page],
+    enabled: isAdmin,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("table_assignment_queue_v9", {
+        _search: deferredSearch,
+        _batch: batchFilter ? Number(batchFilter) : null,
+        _pilot_mode: pilotMode,
+        _limit: PAGE_SIZE,
+        _offset: page * PAGE_SIZE,
       });
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []) as QueueRow[];
     },
   });
 
   function refresh() {
-    for (const key of ["assignment-queue", "daftar-tabel", "review-queue", "review-counts", "tabel", "review-detail", "progres"]) {
-      queryClient.invalidateQueries({ queryKey: [key] });
-    }
+    for (const key of [
+      "table-assignment-queue-v9",
+      "assignment-batch-summary-v9",
+      "daftar-tabel",
+      "review-queue",
+      "review-counts",
+      "tabel",
+      "review-detail",
+      "progres",
+      "dashboard-v8",
+    ]) queryClient.invalidateQueries({ queryKey: [key] });
   }
 
-  const assign = useMutation({
+  const assignOne = useMutation({
     mutationFn: async ({ sourceId, annotatorId, validatorId }: {
-      sourceId: string; annotatorId: string | null; validatorId: string | null;
+      sourceId: string;
+      annotatorId: string | null;
+      validatorId: string | null;
     }) => {
-      if (kind === "table") {
-        const { data, error } = await supabase.rpc("admin_assign_tables_with_qa", {
-          _source_ids: [sourceId], _annotator_id: annotatorId, _validator_id: validatorId,
-          _change_annotator: true, _change_validator: true,
-        });
-        if (error) throw error;
-        return data as TableAssignmentResult;
-      }
-      const { error } = await supabase.rpc("admin_assign_work", {
-        _kind: "qa", _source_id: sourceId, _annotator_id: annotatorId, _validator_id: validatorId,
+      const { data, error } = await supabase.rpc("admin_assign_tables_with_qa", {
+        _source_ids: [sourceId],
+        _annotator_id: annotatorId,
+        _validator_id: validatorId,
+        _change_annotator: true,
+        _change_validator: true,
       });
       if (error) throw error;
-      return null;
+      return data as AssignmentResult;
     },
-    onSuccess: (result) => { toast.success(result ? `Penugasan diperbarui: ${result.qa_assigned} QA ikut ditugaskan.` : "Penugasan QA diperbarui."); refresh(); },
+    onSuccess: (r) => {
+      toast.success(`${r.tables_assigned} tabel dan ${r.qa_assigned} QA diperbarui.`);
+      refresh();
+    },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Gagal memperbarui penugasan."),
   });
 
-  const bulk = useMutation({
+  const assignBatch = useMutation({
     mutationFn: async () => {
-      const visibleIds = new Set((queue.data ?? []).map((r) => r.source_id).filter((id): id is string => !!id));
-      const ids = selected.filter((id) => visibleIds.has(id));
-      if (!ids.length) throw new Error("Pilih setidaknya satu item pada halaman ini.");
-      if (bulkAnnotator === KEEP && bulkValidator === KEEP) throw new Error("Pilih Anotator atau Validator yang ingin diubah.");
-      const { data, error } = await supabase.rpc(
-        kind === "table" ? "admin_assign_tables_with_qa" : "admin_bulk_assign_work", {
-        ...(kind === "qa" ? { _kind: "qa" } : {}), _source_ids: ids,
-        _annotator_id: bulkAnnotator === KEEP || bulkAnnotator === NONE ? null : bulkAnnotator,
-        _validator_id: bulkValidator === KEEP || bulkValidator === NONE ? null : bulkValidator,
-        _change_annotator: bulkAnnotator !== KEEP, _change_validator: bulkValidator !== KEEP,
+      if (!batchToAssign) throw new Error("Pilih batch terlebih dahulu.");
+      if (batchAnnotator === KEEP && batchValidator === KEEP) throw new Error("Pilih Anotator atau Validator yang ingin diubah.");
+      const { data, error } = await supabase.rpc("admin_assign_batch_with_qa", {
+        _batch: Number(batchToAssign),
+        _annotator_id: batchAnnotator === KEEP || batchAnnotator === NONE ? null : batchAnnotator,
+        _validator_id: batchValidator === KEEP || batchValidator === NONE ? null : batchValidator,
+        _change_annotator: batchAnnotator !== KEEP,
+        _change_validator: batchValidator !== KEEP,
+        _pilot_mode: batchPilotMode,
       });
       if (error) throw error;
-      return data;
+      return data as AssignmentResult;
     },
-    onSuccess: (count) => {
-      const result = kind === "table" ? count as TableAssignmentResult : null;
-      toast.success(result
-        ? `${result.tables_assigned} tabel dan ${result.qa_assigned} QA ditugaskan (${result.qa_excluded_by_sampling} QA di luar sampel dilewati).`
-        : `${count} QA berhasil ditugaskan.`);
-      setSelected([]); setBulkAnnotator(KEEP); setBulkValidator(KEEP); refresh();
+    onSuccess: (r) => {
+      toast.success(`Batch ${r.batch}: ${r.tables_assigned} tabel dan ${r.qa_assigned} QA ditugaskan.`);
+      refresh();
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Penugasan massal gagal; tidak ada item yang diubah."),
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Penugasan batch gagal; tidak ada perubahan disimpan."),
   });
 
   if (rolesLoading) return <p className="label-mono">Memuat peran…</p>;
@@ -125,102 +175,158 @@ function AssignmentPage() {
   const eligible = users.data ?? [];
   const annotators = eligible.filter((u) => u.roles.some((r) => ["admin", "validator", "anotator"].includes(r)));
   const validators = eligible.filter((u) => u.roles.some((r) => ["admin", "validator"].includes(r)));
+  const batches = batchSummary.data ?? [];
   const rows = queue.data ?? [];
-  const total = rows[0]?.total_count ?? 0;
-  const selectable = rows.filter((r) => !!r.source_id).map((r) => r.source_id!);
-  const allSelected = selectable.length > 0 && selectable.every((id) => selected.includes(id));
-  const busy = assign.isPending || bulk.isPending;
+  const total = Number(rows[0]?.total_count ?? 0);
+  const busy = assignOne.isPending || assignBatch.isPending;
 
   return <section className="mx-auto max-w-6xl">
-    <PageHeading eyebrow="b · penugasan" title="Penugasan anotator & validator"
-      right={<span className="font-mono text-xs text-mist">{total} entri</span>} />
+    <PageHeading
+      eyebrow="b · penugasan"
+      title="Penugasan berbasis tabel"
+      right={<span className="font-mono text-xs text-mist">{total} tabel</span>}
+    />
     <p className="mb-5 max-w-3xl text-sm text-mist">
-      Penugasan tabel otomatis menugaskan seluruh QA terkait yang masuk sampel (flag = 1),
-      berdasarkan relasi table_id. ID tabel dan ID pertanyaan tetap berbeda. QA dengan penugasan lama
-      yang berbeda tidak akan ditimpa; transaksi dibatalkan. Validator dapat menjadi anotator;
-      Admin dapat dipilih di kedua kolom. Anotator dan validator pada item yang sama harus berbeda.
+      Penugasan hanya dilakukan pada tabel. Semua QA dalam sampel yang terhubung ke tabel otomatis mengikuti
+      Anotator dan Validator tabel tersebut. Gunakan batch yang sudah disediakan untuk penugasan cepat,
+      atau ubah satu tabel secara manual. Flag Pilot tidak mengubah struktur sumber dan dapat difilter terpisah.
     </p>
-    <div className="mb-4 flex flex-wrap gap-2">
-      <button type="button" onClick={() => { setKind("table"); setPage(0); setSelected([]); }}
-        className={`rounded-full px-4 py-2 text-xs ring-1 ${kind === "table" ? "bg-teal/15 text-teal ring-teal/30" : "ring-line"}`}>Tabel</button>
-      <button type="button" onClick={() => { setKind("qa"); setPage(0); setSelected([]); }}
-        className={`rounded-full px-4 py-2 text-xs ring-1 ${kind === "qa" ? "bg-teal/15 text-teal ring-teal/30" : "ring-line"}`}>QA</button>
-      <input value={search} onChange={(e) => { setSearch(e.target.value); setSelected([]); setPage(0); }}
-        placeholder="Cari ID, kode tabel, atau teks…" className="min-w-64 flex-1 rounded-lg bg-frost px-3 py-2 text-sm ring-1 ring-line" />
-    </div>
 
-    <div className="panel mb-4 space-y-3 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold">Penugasan massal · {selected.length} item dipilih</h2>
-        <button type="button" disabled={busy || selected.length === 0} onClick={() => setSelected([])}
-          className="rounded-lg px-3 py-1.5 text-xs ring-1 ring-line disabled:opacity-40">Hapus pilihan</button>
+    <div className="panel mb-5 space-y-4 p-4">
+      <div>
+        <h2 className="font-semibold">Tugaskan berdasarkan batch</h2>
+        <p className="mt-1 text-xs text-mist">
+          Satu batch diproses sebagai satu transaksi database. Jika satu item gagal (misalnya review sudah dimulai
+          oleh validator lain), seluruh perubahan batch dibatalkan.
+        </p>
       </div>
-      <p className="text-xs text-mist">Pilih beberapa item di halaman ini. “Jangan ubah” mempertahankan penugasan lama; “Kosongkan” menghapus penugasan di kolom itu. {kind === "table" ? "QA terkait yang masuk sampel akan otomatis mengikuti; QA yang sudah ditugaskan berbeda harus diselesaikan dahulu di tab QA." : "Penugasan QA manual dapat berbeda, tetapi penugasan tabel berikutnya akan menolak konflik."} Semua perubahan diproses dalam satu transaksi.</p>
-      <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-        <label className="space-y-1 text-xs">Anotator
-          <select aria-label="Anotator massal" value={bulkAnnotator} onChange={(e) => setBulkAnnotator(e.target.value)}
+      <div className="grid gap-3 md:grid-cols-5 md:items-end">
+        <label className="space-y-1 text-xs">Batch
+          <select value={batchToAssign} onChange={(e) => setBatchToAssign(e.target.value)}
             className="block w-full rounded-lg bg-frost p-2 text-sm ring-1 ring-line">
-            <option value={KEEP}>Jangan ubah</option><option value={NONE}>Kosongkan penugasan</option>
+            <option value="">Pilih batch</option>
+            {batches.map((b) => <option key={b.batch_no} value={b.batch_no}>
+              Batch {b.batch_no} · {b.tables} tabel · {b.qa} QA
+            </option>)}
+          </select>
+        </label>
+        <label className="space-y-1 text-xs">Cakupan
+          <select value={batchPilotMode} onChange={(e) => setBatchPilotMode(e.target.value as PilotMode)}
+            className="block w-full rounded-lg bg-frost p-2 text-sm ring-1 ring-line">
+            <option value="all">Semua tabel batch</option>
+            <option value="pilot">Pilot saja</option>
+            <option value="nonpilot">Non-pilot saja</option>
+          </select>
+        </label>
+        <label className="space-y-1 text-xs">Anotator
+          <select value={batchAnnotator} onChange={(e) => setBatchAnnotator(e.target.value)}
+            className="block w-full rounded-lg bg-frost p-2 text-sm ring-1 ring-line">
+            <option value={KEEP}>Jangan ubah</option>
+            <option value={NONE}>Kosongkan</option>
             {annotators.map((u) => <option key={u.id} value={u.id}>{u.full_name || u.email}</option>)}
           </select>
         </label>
         <label className="space-y-1 text-xs">Validator
-          <select aria-label="Validator massal" value={bulkValidator} onChange={(e) => setBulkValidator(e.target.value)}
+          <select value={batchValidator} onChange={(e) => setBatchValidator(e.target.value)}
             className="block w-full rounded-lg bg-frost p-2 text-sm ring-1 ring-line">
-            <option value={KEEP}>Jangan ubah</option><option value={NONE}>Kosongkan penugasan</option>
+            <option value={KEEP}>Jangan ubah</option>
+            <option value={NONE}>Kosongkan</option>
             {validators.map((u) => <option key={u.id} value={u.id}>{u.full_name || u.email}</option>)}
           </select>
         </label>
-        <button type="button" disabled={busy || !selected.length || (bulkAnnotator === KEEP && bulkValidator === KEEP)}
-          onClick={() => bulk.mutate()} className="rounded-lg bg-teal px-4 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-40">
-          {bulk.isPending ? "Menyimpan…" : `Tugaskan ${selected.length} item`}
+        <button type="button"
+          disabled={busy || !batchToAssign || (batchAnnotator === KEEP && batchValidator === KEEP)}
+          onClick={() => {
+            const label = batchPilotMode === "all" ? "semua tabel" : batchPilotMode === "pilot" ? "tabel pilot" : "tabel non-pilot";
+            if (!window.confirm(`Tugaskan ${label} pada Batch ${batchToAssign}? QA terkait otomatis mengikuti.`)) return;
+            assignBatch.mutate();
+          }}
+          className="rounded-lg bg-teal px-4 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-40">
+          {assignBatch.isPending ? "Menyimpan…" : "Tugaskan batch"}
         </button>
       </div>
+
+      {batches.length > 0 && <div className="overflow-x-auto">
+        <table className="w-full min-w-[620px] text-left text-xs">
+          <thead><tr className="border-b border-line/70 label-mono">
+            <th className="p-2">Batch</th><th className="p-2">Tabel</th><th className="p-2">QA</th>
+            <th className="p-2">Pilot</th><th className="p-2">Sudah ada assignment</th>
+          </tr></thead>
+          <tbody>{batches.map((b) => <tr key={b.batch_no} className="border-b border-line/40">
+            <td className="p-2 font-mono">{b.batch_no}</td><td className="p-2">{b.tables}</td><td className="p-2">{b.qa}</td>
+            <td className="p-2">{b.pilot_tables} tabel / {b.pilot_qa} QA</td><td className="p-2">{b.assigned_tables} tabel</td>
+          </tr>)}</tbody>
+        </table>
+      </div>}
+    </div>
+
+    <div className="mb-4 flex flex-wrap gap-2">
+      <select value={batchFilter} onChange={(e) => setBatchFilter(e.target.value)}
+        className="rounded-lg bg-frost px-3 py-2 text-sm ring-1 ring-line">
+        <option value="">Semua batch</option>
+        {batches.map((b) => <option key={b.batch_no} value={b.batch_no}>Batch {b.batch_no}</option>)}
+      </select>
+      <select value={pilotMode} onChange={(e) => setPilotMode(e.target.value as PilotMode)}
+        className="rounded-lg bg-frost px-3 py-2 text-sm ring-1 ring-line">
+        <option value="all">Pilot + non-pilot</option><option value="pilot">Pilot saja</option><option value="nonpilot">Non-pilot saja</option>
+      </select>
+      <input value={search} onChange={(e) => setSearch(e.target.value)}
+        placeholder="Cari ID atau judul tabel…" className="min-w-64 flex-1 rounded-lg bg-frost px-3 py-2 text-sm ring-1 ring-line" />
     </div>
 
     {users.error && <p role="alert" className="mb-4 text-sm text-amber">Gagal memuat pengguna: {users.error.message}</p>}
+    {batchSummary.error && <p role="alert" className="mb-4 text-sm text-amber">Gagal memuat batch: {batchSummary.error.message}</p>}
     {queue.error && <p role="alert" className="mb-4 text-sm text-amber">{queue.error.message}</p>}
-    <div className="panel overflow-x-auto"><table className="w-full min-w-[890px] text-left text-sm">
+
+    <div className="panel overflow-x-auto"><table className="w-full min-w-[980px] text-left text-sm">
       <thead><tr className="border-b border-line/70 label-mono">
-        <th className="p-3"><input type="checkbox" aria-label="Pilih semua di halaman ini" checked={allSelected}
-          disabled={busy || !selectable.length} onChange={(e) => setSelected(e.target.checked ? selectable : [])} /></th>
-        <th className="p-3">ID asli</th><th className="p-3">Item</th><th className="p-3">Sampling</th>
-        <th className="p-3">Anotator</th><th className="p-3">Validator</th>
+        <th className="p-3">ID tabel</th><th className="p-3">Batch</th><th className="p-3">Pilot</th>
+        <th className="p-3">Judul</th><th className="p-3">QA</th><th className="p-3">Anotator</th><th className="p-3">Validator</th>
       </tr></thead>
-      <tbody>{queue.isPending ? <tr><td colSpan={6} className="p-6 text-center text-mist">Memuat…</td></tr> : rows.map((row) =>
+      <tbody>{queue.isPending ? <tr><td colSpan={7} className="p-6 text-center text-mist">Memuat…</td></tr> : rows.map((row) =>
         <AssignmentRow key={`${row.item_id}:${row.annotator_id}:${row.validator_id}`}
           row={row} annotators={annotators} validators={validators} busy={busy}
-          selected={!!row.source_id && selected.includes(row.source_id)}
-          onSelect={(checked) => setSelected((prev) => !row.source_id ? prev : checked
-            ? [...new Set([...prev, row.source_id])] : prev.filter((id) => id !== row.source_id))}
-          onSave={(a, v) => assign.mutate({ sourceId: row.source_id!, annotatorId: a, validatorId: v })} />
+          onSave={(a, v) => {
+            const changing = a !== row.annotator_id || v !== row.validator_id;
+            const alreadyAssigned = row.annotator_id !== null || row.validator_id !== null;
+            if (changing && alreadyAssigned && !window.confirm("Ubah penugasan tabel ini? Semua QA sampel terkait akan ikut berubah.")) return;
+            assignOne.mutate({ sourceId: row.source_id!, annotatorId: a, validatorId: v });
+          }} />
       )}</tbody>
     </table></div>
+
     <div className="mt-4 flex justify-between font-mono text-xs text-mist">
-      <span>{total ? `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} dari ${total}` : "0 entri"}</span>
+      <span>{total ? `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} dari ${total}` : "0 tabel"}</span>
       <div className="flex gap-2">
-        <button disabled={busy || page === 0} onClick={() => { setPage((p) => p - 1); setSelected([]); }}
+        <button disabled={busy || page === 0} onClick={() => setPage((p) => p - 1)}
           className="rounded-lg px-3 py-2 ring-1 ring-line disabled:opacity-40">←</button>
-        <button disabled={busy || (page + 1) * PAGE_SIZE >= total} onClick={() => { setPage((p) => p + 1); setSelected([]); }}
+        <button disabled={busy || (page + 1) * PAGE_SIZE >= total} onClick={() => setPage((p) => p + 1)}
           className="rounded-lg px-3 py-2 ring-1 ring-line disabled:opacity-40">→</button>
       </div>
     </div>
   </section>;
 }
 
-function AssignmentRow({ row, annotators, validators, onSave, busy, selected, onSelect }: {
-  row: QueueRow; annotators: UserOption[]; validators: UserOption[];
+function AssignmentRow({ row, annotators, validators, onSave, busy }: {
+  row: QueueRow;
+  annotators: UserOption[];
+  validators: UserOption[];
   onSave: (a: string | null, v: string | null) => void;
-  busy: boolean; selected: boolean; onSelect: (checked: boolean) => void;
+  busy: boolean;
 }) {
   const [annotator, setAnnotator] = useState(row.annotator_id ?? "");
   const [validator, setValidator] = useState(row.validator_id ?? "");
+  useEffect(() => setAnnotator(row.annotator_id ?? ""), [row.annotator_id]);
+  useEffect(() => setValidator(row.validator_id ?? ""), [row.validator_id]);
+
   return <tr className="border-b border-line/50 last:border-b-0">
-    <td className="p-3"><input type="checkbox" aria-label={`Pilih ${row.source_id ?? row.item_id}`}
-      checked={selected} disabled={busy || !row.source_id} onChange={(e) => onSelect(e.target.checked)} /></td>
     <td className="p-3 font-mono text-xs text-cyan">{row.source_id || "—"}</td>
+    <td className="p-3 font-mono text-xs">{row.batch_no ?? "—"}</td>
+    <td className="p-3">{row.is_pilot
+      ? <span className="rounded-full bg-amber/15 px-2 py-1 text-xs text-amber">Pilot</span>
+      : <span className="text-xs text-mist">—</span>}</td>
     <td className="p-3"><div className="font-mono text-xs text-mist">{row.table_code}</div><div className="line-clamp-2">{row.source_text}</div></td>
-    <td className="p-3 font-mono text-xs">{row.annotate_flag === 1 ? "1 · ya" : "0 · tidak"}</td>
+    <td className="p-3 font-mono text-xs">{row.qa_count}</td>
     <td className="p-3"><select aria-label={`Anotator ${row.source_id}`} value={annotator}
       onChange={(e) => setAnnotator(e.target.value)} className="w-full rounded-lg bg-frost p-2 text-xs ring-1 ring-line">
       <option value="">Belum ditugaskan</option>

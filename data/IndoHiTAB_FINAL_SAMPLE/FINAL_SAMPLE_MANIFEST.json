@@ -1,0 +1,81 @@
+{
+  "name": "IndoHiTAB v2 final sampling - Scenario 3 balanced 2880 QA",
+  "final_sample": true,
+  "source_notebook": "indohitab_hitab.ipynb",
+  "tables": 878,
+  "qa": 2880,
+  "table_source_counts": {
+    "nsf": 183,
+    "statcan": 339,
+    "totto": 356
+  },
+  "qa_source_counts": {
+    "statcan": 1740,
+    "totto": 378,
+    "nsf": 762
+  },
+  "batches": [
+    {
+      "batch": 1,
+      "tables": 108,
+      "qa": 360
+    },
+    {
+      "batch": 2,
+      "tables": 110,
+      "qa": 360
+    },
+    {
+      "batch": 3,
+      "tables": 110,
+      "qa": 360
+    },
+    {
+      "batch": 4,
+      "tables": 110,
+      "qa": 360
+    },
+    {
+      "batch": 5,
+      "tables": 110,
+      "qa": 360
+    },
+    {
+      "batch": 6,
+      "tables": 110,
+      "qa": 360
+    },
+    {
+      "batch": 7,
+      "tables": 110,
+      "qa": 360
+    },
+    {
+      "batch": 8,
+      "tables": 110,
+      "qa": 360
+    }
+  ],
+  "pilot_tables": 8,
+  "pilot_qa": 52,
+  "notebook_verification": {
+    "scenario3_targets": {
+      "nsf": 183,
+      "statcan": 339,
+      "totto": 356
+    },
+    "zero_table_overlap_with_indohitab_v1": true,
+    "zero_qa_id_overlap_with_indohitab_v1": true,
+    "all_8_batches_have_equal_qa": true,
+    "qa_per_batch": 360,
+    "pilot_covers_all_qa_types_reported_by_notebook": true,
+    "qa_types_covered": "22/22"
+  },
+  "sha256": {
+    "tables_sample.csv": "e1287d1e8dcd51a29ccf04387e5d2989c3a326330d0096f8de56a874b5dfcdca",
+    "qa_sample.csv": "9cf66272d528aa31d7288d862a4a9e225abb57f3f3dedd8ca1aa02b19fe576ef",
+    "batches.csv": "b014b7f434400c35d37023a6f744d49378d8085cec186ef6bfc65660257aa580",
+    "pilot_tables.csv": "5afda5518e23fb5c34912870f03e6442f56f75bd40b4f5e23f4d68a98fd10122",
+    "pilot_qa.csv": "055dcaeef82c61c362b6880c38407308e24c180b8bcf38d51a0b7eed68308fb1"
+  }
+}
