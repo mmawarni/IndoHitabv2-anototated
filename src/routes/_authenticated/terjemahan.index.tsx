@@ -143,7 +143,7 @@ function WorkspaceListPage() {
               params={{ tableId: table.id }}
               className="grid grid-cols-[15%_8%_8%_minmax(0,1fr)_15%_15%] items-center gap-3 border-b border-line/50 px-4 py-3 text-sm transition-colors last:border-b-0 hover:bg-ink/5"
             >
-              <span className="font-mono text-xs text-cyan">{table.code}</span>
+              <span className="min-w-0 truncate font-mono text-xs text-cyan" title={table.code}>{table.code}</span>
               <span className="font-mono text-xs">{table.batch_no ?? "—"}</span>
               <span>
                 {table.is_pilot ? (
