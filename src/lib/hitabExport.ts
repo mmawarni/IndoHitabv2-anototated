@@ -144,26 +144,21 @@ export function buildExportFiles(
   for (const table of tables) {
     result.push({ name: originalTableFilename(table.source_id), contents: JSON.stringify(tableForDownload(table), null, 2) + "\n" });
   }
-  const grouped = new Map<string, string[]>();
-  for (const pair of qa) {
-    const split = pair.dataset_split;
-    if (!split || !["train", "dev", "test"].includes(split)) {
-      // Never fabricate an "unspecified" split in a HiTAB-v2-compatible release.
-      throw new Error(`QA ${pair.source_id} lacks its original train/dev/test split`);
-    }
-    if (!grouped.has(split)) grouped.set(split, []);
-    grouped.get(split)!.push(JSON.stringify(qaForDownload(pair, stage)));
-  }
-  // The uploaded IndoHiTAB v2 has train_v2.jsonl and test_v2.jsonl (no dev).
-  // Always include both expected filenames, even when a sampled/final export
-  // currently has zero items in one split. Zero items = an empty JSONL file.
-  // If another source actually contains dev, preserve it without inventing it.
-  for (const split of ["train", "test", "dev"]) {
-    const lines = grouped.get(split) ?? [];
-    if (split !== "dev" || lines.length > 0) {
-      result.push({ name: `indohitab/qa/${split}_v2.jsonl`, contents: lines.length ? lines.join("\n") + "\n" : "" });
-    }
-  }
+  // Export every QA into ONE JSONL file.
+  // dataset_split is metadata only and is NOT required for download.
+  // This avoids blocking an export when an older/imported QA row has no split.
+  const qaLines = qa.map((pair) => JSON.stringify(qaForDownload(pair, stage)));
+  result.push({
+    name: "indohitab/qa/qa_v2.jsonl",
+    contents: qaLines.length ? qaLines.join("\n") + "\n" : "",
+  });
+
+  // Split information is retained only as optional audit metadata.
+  const splitCounts = qa.reduce<Record<string, number>>((acc, pair) => {
+    const split = pair.dataset_split?.trim() || "unspecified";
+    acc[split] = (acc[split] ?? 0) + 1;
+    return acc;
+  }, {});
   const csvRows: (string | number | null)[][] = [
     ["kind", "source_id", "table_id", "split", "data_source_id", "data_source_code", "annotate_flag", "work_status", "export_stage", "answer_translation_state"],
     ...tables.map((t): (string | number | null)[] => ["table", t.source_id, t.source_id, null, t.data_source_id ?? null, t.data_source_code ?? null, t.annotate_flag, t.work_status, stage, null]),
@@ -188,9 +183,9 @@ export function buildExportFiles(
     server_time: receipt.server_time,
     export_stage: stage, sampled_only: sampleOnly,
     tables: tables.length, qa: qa.length,
-    qa_split_counts: { train: (grouped.get("train") ?? []).length, test: (grouped.get("test") ?? []).length, dev: (grouped.get("dev") ?? []).length },
+    qa_split_counts: splitCounts,
     multi_answer_qa_needing_review: qa.filter(q => answerTranslationState(q, stage) === "requires_structured_review").length,
-    original_format: "IndoHiTAB v2 table/*.json + qa/train_v2.jsonl + qa/test_v2.jsonl; metadata is stored outside the canonical dataset files.",
+    original_format: "IndoHiTAB export: table/*.json + one qa/qa_v2.jsonl file; split is retained only in audit metadata.",
     notes: [
       "Original objects are never modified. Translated text replaces question and singleton textual answer in canonical QA keys.",
       "Numeric answers and formula/linked-cell supervision retain their original typed structure.",
@@ -198,6 +193,7 @@ export function buildExportFiles(
       "Current includes unfinished items; final requires completed table/QA reviews and confirmed QA logic.",
       "Reads are paginated live, not one atomic database snapshot. Pause edits before research release.",
       "date_download is PostgreSQL request time, not proof of ZIP receipt by the user.",
+      "QA export is intentionally not partitioned by train/validation/test; all QA are written to qa/qa_v2.jsonl.",
     ],
   }, null, 2) + "\n" });
   return result;
