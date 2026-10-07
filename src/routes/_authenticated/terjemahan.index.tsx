@@ -60,6 +60,33 @@ function WorkspaceListPage() {
     ).sort((a, b) => a - b);
   }, [data]);
 
+  // IMPORTANT: hooks must run in the same order on every render.
+  // These useMemo hooks therefore have to stay BEFORE every conditional return.
+  const qaByTable = useMemo(() => {
+    const map = new Map<string, NonNullable<typeof data>["qa"]>();
+    if (!data) return map;
+
+    for (const pair of data.qa) {
+      if (pair.annotate_flag !== 1) continue;
+      const current = map.get(pair.table_id) ?? [];
+      current.push(pair);
+      map.set(pair.table_id, current);
+    }
+    return map;
+  }, [data]);
+
+  const cellsByTable = useMemo(() => {
+    const map = new Map<string, NonNullable<typeof data>["cells"]>();
+    if (!data) return map;
+
+    for (const cell of data.cells) {
+      const current = map.get(cell.table_id) ?? [];
+      current.push(cell);
+      map.set(cell.table_id, current);
+    }
+    return map;
+  }, [data]);
+
   if (rolesLoading) return <p className="label-mono">Memuat peran…</p>;
   if (rolesError) return <p role="alert">Gagal memuat peran.</p>;
   if (!allowed) return <p role="alert">Halaman ini hanya untuk pengguna yang dapat bertugas sebagai Anotator.</p>;
@@ -69,26 +96,6 @@ function WorkspaceListPage() {
   // v9 uses TABLE assignment as the source of truth. QA assignment is inherited
   // from its parent table, so the workspace must not decide table visibility from
   // qa_pairs.annotator_id. The legacy QA fallback is kept only for old rows.
-  const qaByTable = useMemo(() => {
-    const map = new Map<string, typeof data.qa>();
-    for (const pair of data.qa) {
-      if (pair.annotate_flag !== 1) continue;
-      const current = map.get(pair.table_id) ?? [];
-      current.push(pair);
-      map.set(pair.table_id, current);
-    }
-    return map;
-  }, [data.qa]);
-
-  const cellsByTable = useMemo(() => {
-    const map = new Map<string, typeof data.cells>();
-    for (const cell of data.cells) {
-      const current = map.get(cell.table_id) ?? [];
-      current.push(cell);
-      map.set(cell.table_id, current);
-    }
-    return map;
-  }, [data.cells]);
 
   const assignedTables = data.tables.filter((t) => {
     if (t.annotate_flag !== 1) return false;
