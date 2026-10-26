@@ -20,6 +20,7 @@ export const Route = createFileRoute("/_authenticated/terjemahan/")({
 });
 
 type PilotMode = "all" | "pilot" | "nonpilot";
+type StatusMode = "all" | "done" | "notdone";
 
 const PAGE_SIZE = 30;
 
@@ -28,6 +29,7 @@ function WorkspaceListPage() {
   const allowed = isAdmin || isAnotator || isValidator;
   const [batchFilter, setBatchFilter] = useState("");
   const [pilotMode, setPilotMode] = useState<PilotMode>("all");
+  const [statusMode, setStatusMode] = useState<StatusMode>("all");
   const [page, setPage] = useState(0);
 
   // Filtering, scoping and progress counts run in the database: selecting every
@@ -43,13 +45,14 @@ function WorkspaceListPage() {
   });
 
   const { data, isPending, isFetching, error } = useQuery({
-    queryKey: ["daftar-tabel", "v11", userId, batchFilter, pilotMode, page],
+    queryKey: ["daftar-tabel", "v12", userId, batchFilter, pilotMode, statusMode, page],
     enabled: allowed,
     placeholderData: keepPreviousData,
     queryFn: async () => {
-      const { data, error } = await supabase.rpc("translation_workspace_page_v11", {
+      const { data, error } = await supabase.rpc("translation_workspace_page_v12", {
         _batch: batchFilter ? Number(batchFilter) : null,
         _pilot_mode: pilotMode,
+        _status: statusMode,
         _limit: PAGE_SIZE,
         _offset: page * PAGE_SIZE,
       });
@@ -74,7 +77,7 @@ function WorkspaceListPage() {
       <PageHeading
         eyebrow="c · ruang kerja terjemahan"
         title="Pilih tabel dataset"
-        right={<div className="font-mono text-[11px] text-mist">{total} tabel ditugaskan</div>}
+        right={<div className="font-mono text-[11px] text-mist">{total} tabel ditampilkan</div>}
       />
 
       <div className="mb-4 flex flex-wrap gap-2">
@@ -106,6 +109,19 @@ function WorkspaceListPage() {
           <option value="all">Pilot + non-pilot</option>
           <option value="pilot">Pilot saja</option>
           <option value="nonpilot">Non-pilot saja</option>
+        </select>
+        <select
+          value={statusMode}
+          onChange={(event) => {
+            setStatusMode(event.target.value as StatusMode);
+            setPage(0);
+          }}
+          className="rounded-lg bg-frost px-3 py-2 text-sm ring-1 ring-line"
+          aria-label="Filter status"
+        >
+          <option value="all">Semua status</option>
+          <option value="done">Selesai</option>
+          <option value="notdone">Belum selesai</option>
         </select>
       </div>
 
@@ -173,7 +189,7 @@ function WorkspaceListPage() {
 
         {!data.length && (
           <div className="px-4 py-8 text-center text-sm text-mist">
-            Tidak ada tabel yang cocok dengan filter batch/pilot ini.
+            Tidak ada tabel yang cocok dengan filter ini.
           </div>
         )}
       </div>

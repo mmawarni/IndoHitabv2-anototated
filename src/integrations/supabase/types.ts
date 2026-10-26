@@ -396,8 +396,14 @@ export type Database = {
         Args: { _source_ids: string[]; _annotator_id?: string | null; _validator_id?: string | null; _change_annotator?: boolean; _change_validator?: boolean }
         Returns: Json
       }
-      translation_workspace_page_v11: {
-        Args: { _batch?: number | null; _pilot_mode?: string; _limit?: number; _offset?: number }
+      translation_workspace_page_v12: {
+        Args: {
+          _batch?: number | null
+          _pilot_mode?: string
+          _status?: string
+          _limit?: number
+          _offset?: number
+        }
         Returns: {
           table_id: string
           code: string
@@ -409,6 +415,7 @@ export type Database = {
           cells_done: number
           qa_total: number
           qa_done: number
+          is_done: boolean
           total_count: number
         }[]
       }
