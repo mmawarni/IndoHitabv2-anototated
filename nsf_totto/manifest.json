@@ -1,0 +1,112 @@
+{
+  "design": "all ToTTo + all NSF",
+  "main_sample": {
+    "tables": 2034,
+    "qa": 2729,
+    "sources": {
+      "totto": 1851,
+      "nsf": 183
+    },
+    "qa_sources": {
+      "totto": 1967,
+      "nsf": 762
+    }
+  },
+  "pilot_policy": "Preserve live DB pilot rows and their existing annotations/reviews. Pilot rows are not rebuilt from the replacement CSV.",
+  "batch_policy": "Preserve prior batch for tables already present in the old sample; assign only newly added ToTTo tables to balance table and QA workload.",
+  "batch_counts": {
+    "1": {
+      "tables": 254,
+      "qa": 347
+    },
+    "2": {
+      "tables": 254,
+      "qa": 342
+    },
+    "3": {
+      "tables": 255,
+      "qa": 337
+    },
+    "4": {
+      "tables": 254,
+      "qa": 339
+    },
+    "5": {
+      "tables": 255,
+      "qa": 339
+    },
+    "6": {
+      "tables": 254,
+      "qa": 338
+    },
+    "7": {
+      "tables": 254,
+      "qa": 349
+    },
+    "8": {
+      "tables": 254,
+      "qa": 338
+    }
+  },
+  "overlap": {
+    "unique_source_tables": 100,
+    "pair_groups": 4,
+    "tables_per_pair": 25,
+    "directions": [
+      {
+        "group": 1,
+        "source_batch": 1,
+        "target_batch": 2,
+        "tables": 13
+      },
+      {
+        "group": 1,
+        "source_batch": 2,
+        "target_batch": 1,
+        "tables": 12
+      },
+      {
+        "group": 2,
+        "source_batch": 3,
+        "target_batch": 4,
+        "tables": 12
+      },
+      {
+        "group": 2,
+        "source_batch": 4,
+        "target_batch": 3,
+        "tables": 13
+      },
+      {
+        "group": 3,
+        "source_batch": 5,
+        "target_batch": 6,
+        "tables": 13
+      },
+      {
+        "group": 3,
+        "source_batch": 6,
+        "target_batch": 5,
+        "tables": 12
+      },
+      {
+        "group": 4,
+        "source_batch": 7,
+        "target_batch": 8,
+        "tables": 12
+      },
+      {
+        "group": 4,
+        "source_batch": 8,
+        "target_batch": 7,
+        "tables": 13
+      }
+    ],
+    "qa_policy": "All sampled QA under selected overlap tables follow the table; QA are not independently sampled.",
+    "preview_qa_count": 163,
+    "preview_source_mix": {
+      "totto": 90,
+      "nsf": 10
+    }
+  }
+}

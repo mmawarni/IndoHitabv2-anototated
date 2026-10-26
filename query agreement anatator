@@ -1,0 +1,28 @@
+SELECT
+    t.batch_no,
+
+    COUNT(q.id) AS total_qa,
+
+    COUNT(q.id) FILTER (
+        WHERE q.is_overlap = true
+    ) AS overlap_qa,
+
+    COUNT(q.id) FILTER (
+        WHERE q.is_overlap = true
+          AND q.overlap_annotator_id IS NOT NULL
+    ) AS assigned_overlap,
+
+    COUNT(q.id) FILTER (
+        WHERE q.is_overlap = true
+          AND q.overlap_status = 'selesai'
+    ) AS completed_overlap
+
+FROM public.tqa_tables t
+JOIN public.qa_pairs q
+    ON q.table_id = t.id
+
+WHERE t.is_pilot = true
+  AND q.annotate_flag = 1
+
+GROUP BY t.batch_no
+ORDER BY t.batch_no;
