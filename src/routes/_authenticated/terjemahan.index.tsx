@@ -45,12 +45,6 @@ const STATUS_TABS: { value: WorkStatus; label: string }[] = [
   { value: "belum_selesai", label: "Belum selesai" },
 ];
 
-// table_cells has no body-text flag; imported cells are kind "header" or "column",
-// so body cells are those explicitly stored with kind "body".
-function isBodyCell(cell: { kind: string }) {
-  return cell.kind === "body";
-}
-
 function ratio(done: number, total: number) {
   return total === 0 ? 1 : done / total;
 }
@@ -83,7 +77,7 @@ function WorkspaceListPage() {
           )
           .order("batch_no", { ascending: true, nullsFirst: false })
           .order("code"),
-        supabase.from("table_cells").select("id, table_id, target_text, kind"),
+        supabase.from("table_cells").select("id, table_id, target_text, is_body_text"),
         supabase
           .from("qa_pairs")
           .select(
@@ -172,11 +166,11 @@ function WorkspaceListPage() {
       const cellsDone = cells.filter((cell) => Boolean((cell.target_text ?? "").trim())).length;
 
       const bodyCellsRemaining = cells.filter(
-        (cell) => isBodyCell(cell) && !(cell.target_text ?? "").trim(),
+        (cell) => cell.is_body_text === true && !(cell.target_text ?? "").trim(),
       ).length;
 
       const nonBodyCellsComplete = cells
-        .filter((cell) => !isBodyCell(cell))
+        .filter((cell) => cell.is_body_text !== true)
         .every((cell) => Boolean((cell.target_text ?? "").trim()));
 
       const qaDone = pairs.filter(
@@ -395,11 +389,11 @@ function WorkspaceListPage() {
       <p role="alert">Halaman ini hanya untuk pengguna yang dapat bertugas sebagai Anotator.</p>
     );
   }
-  if (error) {
-    return <p role="alert">Gagal memuat ruang kerja: {error.message}</p>;
-  }
   if (isLoading || !data) {
     return <span className="label-mono">Memuat daftar tabel…</span>;
+  }
+  if (error) {
+    return <p role="alert">Gagal memuat ruang kerja: {error.message}</p>;
   }
 
   const headerButtonClass = "flex w-full items-center gap-1 text-left label-mono hover:text-ink";
