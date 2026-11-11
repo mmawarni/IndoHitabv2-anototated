@@ -46,7 +46,7 @@ function focusNextField(event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElem
 function CopyButton({
   onCopy,
   disabled,
-  children = "⧉ salin",
+  children = "⧉ Copy",
 }: {
   onCopy: () => void;
   disabled?: boolean;
@@ -59,7 +59,7 @@ function CopyButton({
       onClick={onCopy}
       disabled={disabled}
       title="Salin teks EN ke kolom terjemahan"
-      className="shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] text-mist ring-1 ring-line transition-colors hover:bg-ink/5 hover:text-ink disabled:opacity-40"
+      className="shrink-0 rounded-md bg-emerald-600 px-2 py-0.5 text-[11px] font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
     >
       {children}
     </button>
@@ -79,7 +79,6 @@ function TranslationWorkspace() {
   const [activePair, setActivePair] = useState(0);
   const [showPreview, setShowPreview] = useState(true);
   const [activeTab, setActiveTab] = useState<"header" | "qa">("header");
-  const [showQaJson, setShowQaJson] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["tabel", tableId],
@@ -358,24 +357,8 @@ function TranslationWorkspace() {
               </span>
             </div>
 
-            <div className="mb-2 flex items-center gap-2 font-mono text-[11px] text-mist">
-              <span>ID asli QA: {pair.original_question_id ?? "Belum diimpor"}</span>
-              <button
-                type="button"
-                tabIndex={-1}
-                onClick={() => setShowQaJson((v) => !v)}
-                aria-expanded={showQaJson}
-                className="ml-auto rounded-lg px-3 py-1 ring-1 ring-line transition-colors hover:bg-ink/5"
-              >
-                {showQaJson ? "Sembunyikan JSON" : "Tampilkan JSON"}
-              </button>
-            </div>
-            {showQaJson && (
-              <pre className="mb-3 max-h-80 overflow-auto rounded-lg bg-paper/60 p-3 font-mono text-[11px] leading-relaxed ring-1 ring-line">
-                {pair.original_qa == null ? "JSON asli tidak tersedia." : JSON.stringify(pair.original_qa, null, 2)}
-              </pre>
-            )}
-            <HiTabQaLogic original={pair.original_qa} />
+            <div className="mb-2 font-mono text-[11px] text-mist">ID asli QA: {pair.original_question_id ?? "Belum diimpor"}</div>
+            <HiTabQaLogic original={pair.original_qa} collapsible />
             <div className="mb-1 mt-4 font-mono text-xs text-mist">Q · EN</div>
             <div className="mb-3 flex items-start gap-2 text-sm">
               <span className="flex-1">{pair.question_en}</span>
