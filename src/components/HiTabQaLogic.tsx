@@ -3,12 +3,14 @@ import type { Json } from "@/integrations/supabase/types";
 
 function jsonText(v: unknown) { return v === undefined ? "Tidak tersedia" : JSON.stringify(v, null, 2); }
 /** Original QA reasoning is displayed read-only; translation must not alter it. */
-export function HiTabQaLogic({ original, collapsible = false }: {
+export function HiTabQaLogic({ original, collapsible = false, defaultOpen = false }: {
   original: Json | null | undefined;
-  /** Adds a show/hide toggle, hidden by default. */
+  /** Adds a show/hide toggle. */
   collapsible?: boolean;
+  /** Initial state when collapsible (hidden unless set). */
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(!collapsible);
+  const [open, setOpen] = useState(!collapsible || defaultOpen);
   if (!original || typeof original !== "object" || Array.isArray(original)) {
     return <p className="text-xs text-mist">Metadata penalaran QA asli belum diimpor.</p>;
   }
