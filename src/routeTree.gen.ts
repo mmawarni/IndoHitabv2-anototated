@@ -19,6 +19,7 @@ import { Route as AuthenticatedPemeriksaanIndexRouteImport } from './routes/_aut
 import { Route as AuthenticatedTerjemahanIndexRouteImport } from './routes/_authenticated/terjemahan.index'
 import { Route as AuthenticatedTerjemahanTableIdRouteImport } from './routes/_authenticated/terjemahan.$tableId'
 import { Route as AuthenticatedPemeriksaanJenisIdRouteImport } from './routes/_authenticated/pemeriksaan.$jenis.$id'
+import { Route as AuthenticatedTerjemahanTableIdInsidenRouteImport } from './routes/_authenticated/terjemahan.$tableId.insiden'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -73,6 +74,12 @@ const AuthenticatedPemeriksaanJenisIdRoute =
     path: '/pemeriksaan/$jenis/$id',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedTerjemahanTableIdInsidenRoute =
+  AuthenticatedTerjemahanTableIdInsidenRouteImport.update({
+    id: '/insiden',
+    path: '/insiden',
+    getParentRoute: () => AuthenticatedTerjemahanTableIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -80,10 +87,11 @@ export interface FileRoutesByFullPath {
   '/ekspor': typeof AuthenticatedEksporRoute
   '/pengguna': typeof AuthenticatedPenggunaRoute
   '/penugasan': typeof AuthenticatedPenugasanRoute
-  '/terjemahan/$tableId': typeof AuthenticatedTerjemahanTableIdRoute
+  '/terjemahan/$tableId': typeof AuthenticatedTerjemahanTableIdRouteWithChildren
   '/pemeriksaan/': typeof AuthenticatedPemeriksaanIndexRoute
   '/terjemahan/': typeof AuthenticatedTerjemahanIndexRoute
   '/pemeriksaan/$jenis/$id': typeof AuthenticatedPemeriksaanJenisIdRoute
+  '/terjemahan/$tableId/insiden': typeof AuthenticatedTerjemahanTableIdInsidenRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -91,10 +99,11 @@ export interface FileRoutesByTo {
   '/ekspor': typeof AuthenticatedEksporRoute
   '/pengguna': typeof AuthenticatedPenggunaRoute
   '/penugasan': typeof AuthenticatedPenugasanRoute
-  '/terjemahan/$tableId': typeof AuthenticatedTerjemahanTableIdRoute
+  '/terjemahan/$tableId': typeof AuthenticatedTerjemahanTableIdRouteWithChildren
   '/pemeriksaan': typeof AuthenticatedPemeriksaanIndexRoute
   '/terjemahan': typeof AuthenticatedTerjemahanIndexRoute
   '/pemeriksaan/$jenis/$id': typeof AuthenticatedPemeriksaanJenisIdRoute
+  '/terjemahan/$tableId/insiden': typeof AuthenticatedTerjemahanTableIdInsidenRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -104,10 +113,11 @@ export interface FileRoutesById {
   '/_authenticated/ekspor': typeof AuthenticatedEksporRoute
   '/_authenticated/pengguna': typeof AuthenticatedPenggunaRoute
   '/_authenticated/penugasan': typeof AuthenticatedPenugasanRoute
-  '/_authenticated/terjemahan/$tableId': typeof AuthenticatedTerjemahanTableIdRoute
+  '/_authenticated/terjemahan/$tableId': typeof AuthenticatedTerjemahanTableIdRouteWithChildren
   '/_authenticated/pemeriksaan/': typeof AuthenticatedPemeriksaanIndexRoute
   '/_authenticated/terjemahan/': typeof AuthenticatedTerjemahanIndexRoute
   '/_authenticated/pemeriksaan/$jenis/$id': typeof AuthenticatedPemeriksaanJenisIdRoute
+  '/_authenticated/terjemahan/$tableId/insiden': typeof AuthenticatedTerjemahanTableIdInsidenRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -121,6 +131,7 @@ export interface FileRouteTypes {
     | '/pemeriksaan/'
     | '/terjemahan/'
     | '/pemeriksaan/$jenis/$id'
+    | '/terjemahan/$tableId/insiden'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -132,6 +143,7 @@ export interface FileRouteTypes {
     | '/pemeriksaan'
     | '/terjemahan'
     | '/pemeriksaan/$jenis/$id'
+    | '/terjemahan/$tableId/insiden'
   id:
     | '__root__'
     | '/'
@@ -144,6 +156,7 @@ export interface FileRouteTypes {
     | '/_authenticated/pemeriksaan/'
     | '/_authenticated/terjemahan/'
     | '/_authenticated/pemeriksaan/$jenis/$id'
+    | '/_authenticated/terjemahan/$tableId/insiden'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -223,15 +236,37 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPemeriksaanJenisIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/terjemahan/$tableId/insiden': {
+      id: '/_authenticated/terjemahan/$tableId/insiden'
+      path: '/insiden'
+      fullPath: '/terjemahan/$tableId/insiden'
+      preLoaderRoute: typeof AuthenticatedTerjemahanTableIdInsidenRouteImport
+      parentRoute: typeof AuthenticatedTerjemahanTableIdRoute
+    }
   }
 }
+
+interface AuthenticatedTerjemahanTableIdRouteChildren {
+  AuthenticatedTerjemahanTableIdInsidenRoute: typeof AuthenticatedTerjemahanTableIdInsidenRoute
+}
+
+const AuthenticatedTerjemahanTableIdRouteChildren: AuthenticatedTerjemahanTableIdRouteChildren =
+  {
+    AuthenticatedTerjemahanTableIdInsidenRoute:
+      AuthenticatedTerjemahanTableIdInsidenRoute,
+  }
+
+const AuthenticatedTerjemahanTableIdRouteWithChildren =
+  AuthenticatedTerjemahanTableIdRoute._addFileChildren(
+    AuthenticatedTerjemahanTableIdRouteChildren,
+  )
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDasborRoute: typeof AuthenticatedDasborRoute
   AuthenticatedEksporRoute: typeof AuthenticatedEksporRoute
   AuthenticatedPenggunaRoute: typeof AuthenticatedPenggunaRoute
   AuthenticatedPenugasanRoute: typeof AuthenticatedPenugasanRoute
-  AuthenticatedTerjemahanTableIdRoute: typeof AuthenticatedTerjemahanTableIdRoute
+  AuthenticatedTerjemahanTableIdRoute: typeof AuthenticatedTerjemahanTableIdRouteWithChildren
   AuthenticatedPemeriksaanIndexRoute: typeof AuthenticatedPemeriksaanIndexRoute
   AuthenticatedTerjemahanIndexRoute: typeof AuthenticatedTerjemahanIndexRoute
   AuthenticatedPemeriksaanJenisIdRoute: typeof AuthenticatedPemeriksaanJenisIdRoute
@@ -242,7 +277,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedEksporRoute: AuthenticatedEksporRoute,
   AuthenticatedPenggunaRoute: AuthenticatedPenggunaRoute,
   AuthenticatedPenugasanRoute: AuthenticatedPenugasanRoute,
-  AuthenticatedTerjemahanTableIdRoute: AuthenticatedTerjemahanTableIdRoute,
+  AuthenticatedTerjemahanTableIdRoute:
+    AuthenticatedTerjemahanTableIdRouteWithChildren,
   AuthenticatedPemeriksaanIndexRoute: AuthenticatedPemeriksaanIndexRoute,
   AuthenticatedTerjemahanIndexRoute: AuthenticatedTerjemahanIndexRoute,
   AuthenticatedPemeriksaanJenisIdRoute: AuthenticatedPemeriksaanJenisIdRoute,

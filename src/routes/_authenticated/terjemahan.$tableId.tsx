@@ -8,6 +8,7 @@ import { useCurrentUser } from "@/hooks/useAuth";
 import { HiTabTablePreview } from "@/components/HiTabTablePreview";
 import { HiTabQaLogic } from "@/components/HiTabQaLogic";
 import { useWorkOpen } from "@/hooks/useWorkOpen";
+import { IncidentReportLink } from "@/components/IncidentReportLink";
 
 export const Route = createFileRoute("/_authenticated/terjemahan/$tableId")({
   head: () => ({
