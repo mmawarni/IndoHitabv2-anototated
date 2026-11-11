@@ -19,13 +19,16 @@ function asTable(value: Json | null | undefined): TableShape | null {
 function text(value: unknown) { return value === null || value === undefined ? "" : String(value); }
 
 /** Render source or translated HiTAB *matrix*, not a fabricated header/column layout. */
-export function HiTabTablePreview({ snapshot, label, maxHeightClass = "max-h-[26rem]" }: {
+export function HiTabTablePreview({ snapshot, label, maxHeightClass = "max-h-[26rem]", translation }: {
   snapshot: Json | null | undefined;
   label: string;
+  /** Same-shaped translated matrix; its text is shown in bold under each source cell. */
+  translation?: Json | null;
   /** Tailwind max-height class for the scroll area. */
   maxHeightClass?: string;
 }) {
   const table = asTable(snapshot);
+  const translated = translation === undefined ? null : asTable(translation);
   if (!table) return <p className="text-xs text-mist">JSON tabel belum tersedia; tidak membuat pratinjau palsu.</p>;
   const regions = new Map<string, Region>();
   const hidden = new Set<string>();
@@ -50,8 +53,9 @@ export function HiTabTablePreview({ snapshot, label, maxHeightClass = "max-h-[26
           const Tag=header?"th":"td";
           return <Tag key={`${r}:${c}`} rowSpan={region?region.last_row-r+1:1}
             colSpan={region?region.last_column-c+1:1}
-            className={`border border-line/70 px-3 py-2 text-left align-top ${header?"bg-teal/10 font-semibold":""}`}>
+            className={`border border-line/70 px-3 py-2 text-left align-top ${header?"bg-teal/10":""} ${header && !translated?"font-semibold":"font-normal"}`}>
             {text(value)}
+            {translated && <strong className="mt-0.5 block font-bold text-ink">{text(translated.texts[r]?.[c])}</strong>}
           </Tag>;
         })}</tr>)}</tbody>
       </table>

@@ -7,214 +7,214 @@ import { useCurrentUser } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { HiTabTablePreview } from "@/components/HiTabTablePreview";
-import { HiTabQaLogic } from "@/components/HiTabQaLogic";
 import { useWorkOpen } from "@/hooks/useWorkOpen";
 import { CopyButton, focusNextField } from "@/components/TranslationFields";
+import { QaReviewForm } from "@/components/QaReviewForm";
 
 export const Route = createFileRoute("/_authenticated/pemeriksaan/$jenis/$id")({
   head: () => ({ meta: [{ title: "Form Pemeriksaan — HiTab TQA" }] }),
   component: ReviewDetail,
 });
 
+function ReviewDetail() {
+  const { jenis, id } = Route.useParams();
+  const { isValidator, isAdmin, rolesLoading, rolesError } = useCurrentUser();
+  const allowed = isValidator || isAdmin;
+
+  if (rolesLoading) return <p className="label-mono">Memuat peran…</p>;
+  if (rolesError) return <p role="alert" className="text-sm text-amber">Gagal memuat peran. Muat ulang halaman.</p>;
+  if (!allowed) return <p role="alert" className="text-sm text-mist">Halaman ini hanya untuk Validator atau Admin.</p>;
+  if (jenis === "tabel") return <TableReview id={id} />;
+  if (jenis === "pertanyaan") return <QuestionReview id={id} />;
+  return <p>Jenis pemeriksaan tidak dikenal.</p>;
+}
+
+function BackLink() {
+  return <Link to="/pemeriksaan" className="font-mono text-[11px] text-teal hover:underline">← daftar pemeriksaan</Link>;
+}
+
+function QuestionReview({ id }: { id: string }) {
+  // Table code for the heading; the form loads (and caches) the full pair itself.
+  const { data } = useQuery({
+    queryKey: ["review-detail", "pertanyaan-code", id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("qa_pairs").select("tqa_tables(code)").eq("id", id).maybeSingle();
+      if (error) throw error;
+      return data?.tqa_tables?.code ?? "";
+    },
+  });
+  return (
+    <section>
+      <PageHeading eyebrow={`v · pertanyaan · ${data ?? ""}`} title="Pemeriksaan terjemahan" right={<BackLink />} />
+      <QaReviewForm pairId={id} withTablePreview />
+      <p className="mt-4 text-xs text-mist">Hasil validator disimpan terpisah dari terjemahan asli untuk menjaga jejak pemeriksaan.</p>
+    </section>
+  );
+}
+
 type ReviewStatus = "sedang_diperiksa" | "selesai";
 type CellCorrections = Record<string, string>;
 
-function ReviewDetail() {
-  const { jenis, id } = Route.useParams();
-  const isTable = jenis === "tabel";
-  const { userId, isValidator, isAdmin, rolesLoading, rolesError } = useCurrentUser();
+/** Copy of a HiTAB snapshot with the validator's title and cell corrections applied. */
+function applyCorrections(
+  snapshot: Json | null | undefined,
+  title: string,
+  cells: { id: string; row_index: number | null; column_index: number | null }[],
+  corrections: CellCorrections,
+): Json | null {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return null;
+  const texts = (snapshot as Record<string, unknown>)["texts"];
+  if (!Array.isArray(texts) || !texts.every(Array.isArray)) return null;
+  const next = texts.map((row) => [...(row as unknown[])]);
+  for (const cell of cells) {
+    if (cell.row_index === null || cell.column_index === null) continue;
+    const row = next[cell.row_index];
+    if (row && cell.column_index < row.length) row[cell.column_index] = corrections[cell.id] ?? "";
+  }
+  return { ...snapshot, title, texts: next } as Json;
+}
+
+function TableReview({ id }: { id: string }) {
+  const { userId, isValidator, isAdmin } = useCurrentUser();
   const allowed = isValidator || isAdmin;
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
   const [cells, setCells] = useState<CellCorrections>({});
-  const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
   const [dirty, setDirty] = useState(false);
-  const [logicConfirmed, setLogicConfirmed] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
+  const [activeTab, setActiveTab] = useState<"header" | "qa">("header");
+  const [activePair, setActivePair] = useState(0);
 
   const { data, isPending, error } = useQuery({
-    queryKey: ["review-detail", jenis, id],
-    enabled: allowed && (isTable || jenis === "pertanyaan"),
+    queryKey: ["review-detail", "tabel", id],
+    enabled: allowed,
     queryFn: async () => {
-      if (isTable) {
-        const [t, c, r] = await Promise.all([
-          supabase.from("tqa_tables").select("id, code, title_en, title_id, original_table, annotated_table, validated_table, annotate_flag, validator_id").eq("id", id).maybeSingle(),
-          supabase.from("table_cells").select("id, kind, position, source_text, target_text, status").eq("table_id", id).order("position"),
-          supabase.from("table_reviews").select("id, reviewer_id, status, reviewed_title_id, corrected_cells").eq("table_id", id).maybeSingle(),
-        ]);
-        if (t.error) throw t.error;
-        if (c.error) throw c.error;
-        if (r.error) throw r.error;
-        return { kind: "tabel" as const, table: t.data, cells: c.data ?? [], review: r.data };
-      }
-      const [q, r] = await Promise.all([
-        supabase.from("qa_pairs").select("id, table_id, question_en, answer_en, question_id, answer_id, status, original_qa, annotated_qa, validated_qa, annotate_flag, original_question_id, validator_id").eq("id", id).maybeSingle(),
-        supabase.from("qa_reviews").select("id, reviewer_id, status, reviewed_question_id, reviewed_answer_id, logic_confirmed").eq("qa_pair_id", id).maybeSingle(),
+      const [t, c, r, q] = await Promise.all([
+        supabase.from("tqa_tables").select("id, code, title_en, title_id, original_table, annotated_table, validated_table, annotate_flag, validator_id").eq("id", id).maybeSingle(),
+        supabase.from("table_cells").select("id, kind, position, source_text, target_text, status, row_index, column_index").eq("table_id", id).order("position"),
+        supabase.from("table_reviews").select("id, reviewer_id, status, reviewed_title_id, corrected_cells").eq("table_id", id).maybeSingle(),
+        supabase.from("qa_pairs").select("id").eq("table_id", id).eq("annotate_flag", 1).order("position"),
       ]);
-      if (q.error) throw q.error;
-      if (r.error) throw r.error;
-      if (!q.data) return { kind: "pertanyaan" as const, pair: null, table: null, review: r.data };
-      const t = await supabase.from("tqa_tables").select("code, title_en, title_id, original_table").eq("id", q.data.table_id).maybeSingle();
       if (t.error) throw t.error;
-      return { kind: "pertanyaan" as const, pair: q.data, table: t.data, review: r.data };
+      if (c.error) throw c.error;
+      if (r.error) throw r.error;
+      if (q.error) throw q.error;
+      return { table: t.data, cells: c.data ?? [], review: r.data, pairIds: (q.data ?? []).map((p) => p.id) };
     },
   });
 
   useEffect(() => {
     if (!data) return;
-    if (data.kind === "tabel") {
-      setTitle(data.review?.reviewed_title_id ?? data.table?.title_id ?? "");
-      const saved = data.review?.corrected_cells;
-      const savedCells: CellCorrections = saved && typeof saved === "object" && !Array.isArray(saved)
-        ? Object.fromEntries(Object.entries(saved).filter((entry): entry is [string, string] => typeof entry[1] === "string")) : {};
-      setCells(Object.fromEntries(data.cells.map((cell) => [cell.id, savedCells[cell.id] ?? cell.target_text ?? ""])));
-    } else {
-      setQuestion(data.review?.reviewed_question_id ?? data.pair?.question_id ?? "");
-      setAnswer(data.review?.reviewed_answer_id ?? data.pair?.answer_id ?? "");
-      setLogicConfirmed(data.review?.logic_confirmed ?? false);
-    }
+    setTitle(data.review?.reviewed_title_id ?? data.table?.title_id ?? "");
+    const saved = data.review?.corrected_cells;
+    const savedCells: CellCorrections = saved && typeof saved === "object" && !Array.isArray(saved)
+      ? Object.fromEntries(Object.entries(saved).filter((entry): entry is [string, string] => typeof entry[1] === "string")) : {};
+    setCells(Object.fromEntries(data.cells.map((cell) => [cell.id, savedCells[cell.id] ?? cell.target_text ?? ""])));
     setDirty(false);
   }, [data]);
 
-  const tableReady = data?.kind === "tabel" && !!data.table?.title_id?.trim() && data.cells.length > 0
+  const ready = data?.table?.annotate_flag === 1 && !!data.table?.title_id?.trim() && data.cells.length > 0
     && data.cells.every((cell) => !!cell.target_text?.trim() && cell.status === "selesai");
-  const qaReady = data?.kind === "pertanyaan" && !!data.pair?.question_id?.trim()
-    && !!data.pair?.answer_id?.trim() && data.pair.status === "selesai";
-  const sampled = data?.kind === "tabel" ? data.table?.annotate_flag === 1 : data?.pair?.annotate_flag === 1;
-  const ready = sampled && (isTable ? tableReady : qaReady);
-  const assignedValidator = data?.kind === "tabel" ? data.table?.validator_id : data?.pair?.validator_id;
-  const notAssigned = !isAdmin && assignedValidator !== userId;
+  const sampled = data?.table?.annotate_flag === 1;
+  const notAssigned = !isAdmin && data?.table?.validator_id !== userId;
   const ownedByOther = !!data?.review?.reviewer_id && data.review.reviewer_id !== userId && !isAdmin;
   const canEdit = allowed && ready && !notAssigned && !ownedByOther && !!userId;
-  useWorkOpen(isTable ? "table_review" : "qa_review", id, canEdit);
+  useWorkOpen("table_review", id, canEdit);
 
   const save = useMutation({
     mutationFn: async (status: ReviewStatus) => {
       if (!data || !canEdit || !userId) throw new Error("Pemeriksaan tidak tersedia untuk akun atau entri ini.");
-      if (data.kind === "tabel") {
-        if (status === "selesai" && (!title.trim() || data.cells.some((c) => !cells[c.id]?.trim()))) {
-          throw new Error("Semua hasil pemeriksaan judul dan sel wajib terisi.");
-        }
-        const values = { status, reviewed_title_id: title.trim(), corrected_cells: cells as Json };
-        if (data.review) {
-          const { data: updated, error } = await supabase.from("table_reviews")
-            .update(values).eq("id", data.review.id).select("id").maybeSingle();
-          if (error) throw error;
-          if (!updated) throw new Error("Pemeriksaan telah berubah. Muat ulang halaman.");
-        } else {
-          const { error } = await supabase.from("table_reviews").insert({
-            table_id: id, reviewer_id: userId, ...values,
-          });
-          if (error) throw error;
-        }
+      if (status === "selesai" && (!title.trim() || data.cells.some((c) => !cells[c.id]?.trim()))) {
+        throw new Error("Semua hasil pemeriksaan judul dan sel wajib terisi.");
+      }
+      const values = { status, reviewed_title_id: title.trim(), corrected_cells: cells as Json };
+      if (data.review) {
+        const { data: updated, error } = await supabase.from("table_reviews")
+          .update(values).eq("id", data.review.id).select("id").maybeSingle();
+        if (error) throw error;
+        if (!updated) throw new Error("Pemeriksaan telah berubah. Muat ulang halaman.");
       } else {
-        if (status === "selesai" && (!question.trim() || !answer.trim())) {
-          throw new Error("Hasil pemeriksaan pertanyaan dan jawaban wajib diisi.");
-        }
-        if (status === "selesai" && data.pair.original_qa && !logicConfirmed) {
-          throw new Error("Periksa answer asli, aggregation, formula, dan linked cells terlebih dahulu.");
-        }
-        const values = { status, reviewed_question_id: question.trim(), reviewed_answer_id: answer.trim(), logic_confirmed: logicConfirmed };
-        if (data.review) {
-          const { data: updated, error } = await supabase.from("qa_reviews")
-            .update(values).eq("id", data.review.id).select("id").maybeSingle();
-          if (error) throw error;
-          if (!updated) throw new Error("Pemeriksaan telah berubah. Muat ulang halaman.");
-        } else {
-          const { error } = await supabase.from("qa_reviews").insert({
-            qa_pair_id: id, reviewer_id: userId, ...values,
-          });
-          if (error) throw error;
-        }
+        const { error } = await supabase.from("table_reviews").insert({
+          table_id: id, reviewer_id: userId, ...values,
+        });
+        if (error) throw error;
       }
     },
     onSuccess: (_data, status) => {
       setDirty(false);
       toast.success(status === "selesai" ? "Pemeriksaan selesai disimpan." : "Draf pemeriksaan tersimpan.");
-      queryClient.invalidateQueries({ queryKey: ["review-detail", jenis, id] });
+      queryClient.invalidateQueries({ queryKey: ["review-detail", "tabel", id] });
       queryClient.invalidateQueries({ queryKey: ["review-queue"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Gagal menyimpan pemeriksaan."),
   });
 
-  if (rolesLoading) return <p className="label-mono">Memuat peran…</p>;
-  if (rolesError) return <p role="alert" className="text-sm text-amber">Gagal memuat peran. Muat ulang halaman.</p>;
-  if (!allowed) return <p role="alert" className="text-sm text-mist">Halaman ini hanya untuk Validator atau Admin.</p>;
-  if (jenis !== "tabel" && jenis !== "pertanyaan") return <p>Jenis pemeriksaan tidak dikenal.</p>;
   if (isPending) return <p className="label-mono">Memuat detail pemeriksaan…</p>;
   if (error) return <p role="alert" className="text-sm text-amber">Gagal memuat detail: {error.message}</p>;
-  if (!data?.table || (data.kind === "tabel" ? !data.table : !data.pair)) return <p>Entri tidak ditemukan.</p>;
+  if (!data?.table) return <p>Entri tidak ditemukan.</p>;
+  const table = data.table;
 
   const locked = !canEdit || save.isPending;
   const fieldClass =
     "w-full rounded-lg bg-frost px-3 py-2 text-sm ring-1 ring-line outline-none focus:ring-2 focus:ring-teal/50 disabled:opacity-60";
   const alertClass = "mb-4 rounded-lg bg-amber/10 p-3 text-sm text-amber ring-1 ring-amber/25";
-  const actions = (
-    <div className="flex flex-wrap items-center gap-2 px-4 py-3">
-      <button type="button" disabled={locked}
-        onClick={() => save.mutate("sedang_diperiksa")}
-        className="rounded-lg px-4 py-2 text-sm font-semibold ring-1 ring-line transition-colors hover:bg-ink/5 disabled:opacity-50">
-        {save.isPending ? "Menyimpan…" : "Simpan sementara"}
-      </button>
-      <button type="button" data-nav disabled={locked}
-        onClick={() => save.mutate("selesai")}
-        className="rounded-lg bg-teal px-4 py-2 text-sm font-semibold text-primary-foreground ring-1 ring-teal/40 transition-colors hover:bg-teal/90 disabled:opacity-60">
-        {data.review?.status === "selesai" ? "Simpan perbaikan" : "Selesaikan pemeriksaan"}
-      </button>
-      <span aria-live="polite" className="ml-auto font-mono text-[10px] text-mist">{dirty ? "Perubahan belum disimpan" : ""}</span>
-    </div>
-  );
-  const preview = (snapshots: { snapshot: Json | null | undefined; label: string }[]) => (
-    <div className="panel mb-4 p-4">
-      <div className="flex items-center gap-2">
-        <div className="label-mono">Pratinjau tabel</div>
-        <button type="button" tabIndex={-1} onClick={() => setShowPreview((v) => !v)}
-          className="ml-auto rounded-lg px-3 py-1.5 font-mono text-[11px] text-mist ring-1 ring-line transition-colors hover:bg-ink/5">
-          {showPreview ? "Sembunyikan" : "Tampilkan"}
-        </button>
-      </div>
-      {showPreview && <div className={`mt-3 grid gap-6 ${snapshots.length > 1 ? "md:grid-cols-2" : ""}`}>
-        {snapshots.map((s) => <HiTabTablePreview key={s.label} snapshot={s.snapshot} label={s.label} maxHeightClass="max-h-[75vh]" />)}
-      </div>}
-    </div>
-  );
+  const tabClass = (active: boolean) =>
+    `px-4 py-2 text-sm font-medium transition-colors ${active ? "border-b-2 border-teal text-teal" : "text-mist hover:text-ink"}`;
+  const pairId = data.pairIds[activePair];
 
   return (
     <section>
-      <PageHeading eyebrow={`v · ${data.kind === "tabel" ? "tabel" : "pertanyaan"} · ${data.table.code}`}
-        title="Pemeriksaan terjemahan"
-        right={<Link to="/pemeriksaan" className="font-mono text-[11px] text-teal hover:underline">← daftar pemeriksaan</Link>} />
-      {!sampled && <p role="alert" className={alertClass}>Entri tidak termasuk sampel validasi.</p>}
-      {!ready && <div role="alert" className={alertClass}>Terjemahan belum lengkap. Form pemeriksaan dikunci sampai anotator menyelesaikannya.</div>}
-      {notAssigned && <div role="alert" className={alertClass}>Entri ini tidak ditugaskan kepada akun Validator Anda.</div>}
-      {ownedByOther && <div role="alert" className={alertClass}>Entri sedang ditangani validator lain. Anda tidak dapat mengubahnya.</div>}
-      {data.review?.status === "selesai" && <p className="mb-4 font-mono text-xs text-teal">Pemeriksaan sudah selesai. Ubah hasil lalu pilih “Simpan perbaikan” untuk memutakhirkan hasil.</p>}
+      <PageHeading eyebrow={`v · tabel · ${table.code}`} title="Pemeriksaan terjemahan" right={<BackLink />} />
 
-      {data.kind === "tabel" ? <>
-        <div className="panel mb-4 p-4">
-          <label htmlFor="review-title" className="label-mono mb-2 block">Judul tabel</label>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="rounded-lg bg-paper/60 px-3 py-2">
-              <div className="flex items-start gap-2 font-mono text-xs">
-                <span className="flex-1">{data.table.title_en}</span>
-                <CopyButton disabled={locked} onCopy={() => { setTitle(data.table?.title_en ?? ""); setDirty(true); }} />
-              </div>
-              <div className="mt-1 text-xs text-mist">Anotator: {data.table.title_id || "(kosong)"}</div>
+      <div className="panel mb-4 p-4">
+        <label htmlFor="review-title" className="label-mono mb-2 block">Judul tabel</label>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-lg bg-paper/60 px-3 py-2">
+            <div className="flex items-start gap-2 font-mono text-xs">
+              <span className="flex-1">{table.title_en}</span>
+              <CopyButton disabled={locked} onCopy={() => { setTitle(table.title_en ?? ""); setDirty(true); }} />
             </div>
-            <input id="review-title" data-nav value={title} disabled={locked}
-              onChange={(e) => { setTitle(e.target.value); setDirty(true); }}
-              onKeyDown={focusNextField}
-              placeholder="Hasil pemeriksaan judul (ID)"
-              className={fieldClass} />
+            <div className="mt-1 text-xs text-mist">Anotator: {table.title_id || "(kosong)"}</div>
           </div>
+          <input id="review-title" data-nav value={title} disabled={locked}
+            onChange={(e) => { setTitle(e.target.value); setDirty(true); }}
+            onKeyDown={focusNextField}
+            placeholder="Hasil pemeriksaan judul (ID)"
+            className={fieldClass} />
         </div>
+      </div>
 
-        {preview([
-          { snapshot: data.table.original_table, label: "Tabel sumber asli" },
-          { snapshot: data.table.annotated_table, label: "Tabel hasil anotator" },
-          ...(data.table.validated_table ? [{ snapshot: data.table.validated_table, label: "Snapshot validasi sebelumnya" }] : []),
-        ])}
+      <div className="panel p-4">
+        <div className="flex items-center gap-2">
+          <div className="label-mono">Pratinjau tabel</div>
+          <button type="button" tabIndex={-1} onClick={() => setShowPreview((v) => !v)}
+            className="ml-auto rounded-lg px-3 py-1.5 font-mono text-[11px] text-mist ring-1 ring-line transition-colors hover:bg-ink/5">
+            {showPreview ? "Sembunyikan" : "Tampilkan"}
+          </button>
+        </div>
+        {showPreview && <div className="mt-3 grid gap-6 md:grid-cols-2">
+          <HiTabTablePreview snapshot={table.original_table} translation={table.annotated_table}
+            label="Sebelum validasi · EN + ID anotator (tebal)" maxHeightClass="max-h-[75vh]" />
+          <HiTabTablePreview snapshot={applyCorrections(table.annotated_table, title, data.cells, cells)}
+            label="Sesudah validasi" maxHeightClass="max-h-[75vh]" />
+        </div>}
+      </div>
+
+      <div className="mt-6 flex gap-1 border-b border-line/70">
+        <button type="button" onClick={() => setActiveTab("header")} className={tabClass(activeTab === "header")}>
+          Header & kolom tabel
+        </button>
+        <button type="button" onClick={() => setActiveTab("qa")} className={tabClass(activeTab === "qa")}>
+          Pasangan tanya-jawab <span className="font-mono text-xs text-mist">{data.pairIds.length}</span>
+        </button>
+      </div>
+
+      {activeTab === "header" && <div className="mt-4">
+        {!sampled && <p role="alert" className={alertClass}>Entri tidak termasuk sampel validasi.</p>}
+        {!ready && <div role="alert" className={alertClass}>Terjemahan belum lengkap. Form pemeriksaan dikunci sampai anotator menyelesaikannya.</div>}
+        {notAssigned && <div role="alert" className={alertClass}>Entri ini tidak ditugaskan kepada akun Validator Anda.</div>}
+        {ownedByOther && <div role="alert" className={alertClass}>Entri sedang ditangani validator lain. Anda tidak dapat mengubahnya.</div>}
+        {data.review?.status === "selesai" && <p className="mb-4 font-mono text-xs text-teal">Pemeriksaan sudah selesai. Ubah hasil lalu pilih “Simpan perbaikan” untuk memutakhirkan hasil.</p>}
 
         <div className="panel overflow-hidden">
           <div className="grid grid-cols-2 border-b border-line/70">
@@ -240,46 +240,37 @@ function ReviewDetail() {
                 className={`${fieldClass} px-2 py-1.5 font-medium`} />
             </div>
           </div>)}
-          {actions}
-        </div>
-      </> : data.pair ? <>
-        {preview([{ snapshot: data.table.original_table, label: "Tabel sumber untuk verifikasi jawaban" }])}
-        <div className="panel p-4">
-          <div className="mb-2 font-mono text-[11px] text-mist">ID asli QA: {data.pair.original_question_id ?? "Belum diimpor"}</div>
-          <HiTabQaLogic original={data.pair.original_qa} collapsible defaultOpen />
-
-          <div className="mb-1 mt-4 font-mono text-xs text-mist">Q · EN</div>
-          <div className="mb-1 flex items-start gap-2 text-sm">
-            <span className="flex-1">{data.pair.question_en}</span>
-            <CopyButton disabled={locked} onCopy={() => { setQuestion(data.pair?.question_en ?? ""); setDirty(true); }} />
+          <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+            <button type="button" disabled={locked}
+              onClick={() => save.mutate("sedang_diperiksa")}
+              className="rounded-lg px-4 py-2 text-sm font-semibold ring-1 ring-line transition-colors hover:bg-ink/5 disabled:opacity-50">
+              {save.isPending ? "Menyimpan…" : "Simpan sementara"}
+            </button>
+            <button type="button" data-nav disabled={locked}
+              onClick={() => save.mutate("selesai")}
+              className="rounded-lg bg-teal px-4 py-2 text-sm font-semibold text-primary-foreground ring-1 ring-teal/40 transition-colors hover:bg-teal/90 disabled:opacity-60">
+              {data.review?.status === "selesai" ? "Simpan perbaikan" : "Selesaikan pemeriksaan"}
+            </button>
+            <span aria-live="polite" className="ml-auto font-mono text-[10px] text-mist">{dirty ? "Perubahan belum disimpan" : ""}</span>
           </div>
-          <div className="mb-3 text-xs text-mist">Anotator: {data.pair.question_id || "(kosong)"}</div>
-          <label htmlFor="review-question" className="mb-1 block font-mono text-xs text-mist">Q · ID · hasil pemeriksaan</label>
-          <textarea id="review-question" data-nav rows={2} value={question} disabled={locked}
-            onChange={(e) => { setQuestion(e.target.value); setDirty(true); }}
-            onKeyDown={focusNextField}
-            className={`${fieldClass} mb-4`} />
-
-          <div className="mb-1 font-mono text-xs text-mist">A · EN</div>
-          <div className="mb-1 flex items-start gap-2 text-sm">
-            <span className="flex-1">{data.pair.answer_en}</span>
-            <CopyButton disabled={locked} onCopy={() => { setAnswer(data.pair?.answer_en ?? ""); setDirty(true); }} />
-          </div>
-          <div className="mb-3 text-xs text-mist">Anotator: {data.pair.answer_id || "(kosong)"}</div>
-          <label htmlFor="review-answer" className="mb-1 block font-mono text-xs text-mist">A · ID · hasil pemeriksaan</label>
-          <textarea id="review-answer" data-nav rows={2} value={answer} disabled={locked}
-            onChange={(e) => { setAnswer(e.target.value); setDirty(true); }}
-            onKeyDown={focusNextField}
-            className={`${fieldClass} mb-4`} />
-
-          {data.pair.original_qa && <label className="flex items-start gap-2 rounded-lg bg-teal/5 p-3 text-sm">
-            <input type="checkbox" checked={logicConfirmed} disabled={locked}
-              onChange={(e)=>{setLogicConfirmed(e.target.checked);setDirty(true);}} />
-            Saya sudah memeriksa kesesuaian terjemahan dengan jawaban asli, aggregation, formula, dan linked cells.
-          </label>}
         </div>
-        <div className="panel mt-4 overflow-hidden">{actions}</div>
-      </> : null}
+      </div>}
+
+      {activeTab === "qa" && <div className="mt-4">
+        {pairId ? <>
+          <div className="mb-3 flex items-center gap-2 font-mono text-xs text-mist">
+            <span>Pasangan {activePair + 1} / {data.pairIds.length}</span>
+            <button type="button" tabIndex={-1} disabled={activePair === 0}
+              onClick={() => setActivePair((i) => Math.max(i - 1, 0))}
+              className="ml-auto rounded-lg px-3 py-1.5 ring-1 ring-line hover:bg-ink/5 disabled:opacity-40">← Sebelumnya</button>
+            <button type="button" tabIndex={-1} disabled={activePair >= data.pairIds.length - 1}
+              onClick={() => setActivePair((i) => Math.min(i + 1, data.pairIds.length - 1))}
+              className="rounded-lg px-3 py-1.5 ring-1 ring-line hover:bg-ink/5 disabled:opacity-40">Berikutnya →</button>
+          </div>
+          <QaReviewForm key={pairId} pairId={pairId} />
+        </> : <div className="panel p-4 text-sm text-mist">Tabel ini belum memiliki pasangan tanya-jawab.</div>}
+      </div>}
+
       <p className="mt-4 text-xs text-mist">Hasil validator disimpan terpisah dari terjemahan asli untuk menjaga jejak pemeriksaan.</p>
     </section>
   );
