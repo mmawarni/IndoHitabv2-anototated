@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeading } from "@/components/AppShell";
@@ -25,15 +25,7 @@ type ValidationFilter = "all" | "validated" | "not_validated";
 type ProgressFilter = "all" | "complete" | "incomplete";
 type SortDirection = "asc" | "desc";
 type SortKey =
-  | "code"
-  | "batch"
-  | "pilot"
-  | "title"
-  | "status"
-  | "cells"
-  | "qa"
-  | "body"
-  | "validation";
+  "code" | "batch" | "pilot" | "title" | "status" | "cells" | "qa" | "body" | "validation";
 
 const statusRank: Record<Exclude<WorkStatus, "all">, number> = {
   belum_selesai: 0,
@@ -41,27 +33,37 @@ const statusRank: Record<Exclude<WorkStatus, "all">, number> = {
   selesai: 2,
 };
 
+const PAGE_SIZE = 25;
+
+const GRID_COLS =
+  "grid min-w-[75rem] grid-cols-[12rem_4.5rem_4.5rem_minmax(14rem,1fr)_8rem_7rem_7rem_5.5rem_6rem] items-center gap-3";
+
+const STATUS_TABS: { value: WorkStatus; label: string }[] = [
+  { value: "all", label: "Semua" },
+  { value: "selesai", label: "Selesai" },
+  { value: "cell_belum", label: "Body cell belum" },
+  { value: "belum_selesai", label: "Belum selesai" },
+];
+
 function ratio(done: number, total: number) {
   return total === 0 ? 1 : done / total;
 }
 
 function WorkspaceListPage() {
-  const { userId, isAdmin, isAnotator, isValidator, rolesLoading, rolesError } =
-    useCurrentUser();
+  const { userId, isAdmin, isAnotator, isValidator, rolesLoading, rolesError } = useCurrentUser();
   const allowed = isAdmin || isAnotator || isValidator;
 
   const [search, setSearch] = useState("");
   const [batchFilter, setBatchFilter] = useState("");
   const [pilotMode, setPilotMode] = useState<PilotMode>("all");
   const [statusFilter, setStatusFilter] = useState<WorkStatus>("all");
-  const [validationFilter, setValidationFilter] =
-    useState<ValidationFilter>("all");
-  const [cellProgressFilter, setCellProgressFilter] =
-    useState<ProgressFilter>("all");
-  const [qaProgressFilter, setQaProgressFilter] =
-    useState<ProgressFilter>("all");
+  const [validationFilter, setValidationFilter] = useState<ValidationFilter>("all");
+  const [cellProgressFilter, setCellProgressFilter] = useState<ProgressFilter>("all");
+  const [qaProgressFilter, setQaProgressFilter] = useState<ProgressFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("batch");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [showFilters, setShowFilters] = useState(false);
+  const [page, setPage] = useState(0);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["daftar-tabel-v11-sort-validation", userId],
@@ -75,9 +77,7 @@ function WorkspaceListPage() {
           )
           .order("batch_no", { ascending: true, nullsFirst: false })
           .order("code"),
-        supabase
-          .from("table_cells")
-          .select("id, table_id, target_text, is_body_text"),
+        supabase.from("table_cells").select("id, table_id, target_text, is_body_text"),
         supabase
           .from("qa_pairs")
           .select(
@@ -101,9 +101,7 @@ function WorkspaceListPage() {
     if (!data) return [];
     return Array.from(
       new Set(
-        data.tables
-          .map((t) => t.batch_no)
-          .filter((value): value is number => value !== null),
+        data.tables.map((t) => t.batch_no).filter((value): value is number => value !== null),
       ),
     ).sort((a, b) => a - b);
   }, [data]);
@@ -141,9 +139,7 @@ function WorkspaceListPage() {
       if (isAdmin) return true;
       if (table.annotator_id === userId) return true;
 
-      return (qaByTable.get(table.id) ?? []).some(
-        (q) => q.annotator_id === userId,
-      );
+      return (qaByTable.get(table.id) ?? []).some((q) => q.annotator_id === userId);
     });
   }, [data, isAdmin, userId, qaByTable]);
 
@@ -167,13 +163,10 @@ function WorkspaceListPage() {
       const pairs = qaByTable.get(table.id) ?? [];
       const titleDone = Boolean((table.title_id ?? "").trim());
 
-      const cellsDone = cells.filter((cell) =>
-        Boolean((cell.target_text ?? "").trim()),
-      ).length;
+      const cellsDone = cells.filter((cell) => Boolean((cell.target_text ?? "").trim())).length;
 
       const bodyCellsRemaining = cells.filter(
-        (cell) =>
-          cell.is_body_text === true && !(cell.target_text ?? "").trim(),
+        (cell) => cell.is_body_text === true && !(cell.target_text ?? "").trim(),
       ).length;
 
       const nonBodyCellsComplete = cells
@@ -181,9 +174,7 @@ function WorkspaceListPage() {
         .every((cell) => Boolean((cell.target_text ?? "").trim()));
 
       const qaDone = pairs.filter(
-        (q) =>
-          Boolean((q.question_id ?? "").trim()) &&
-          Boolean((q.answer_id ?? "").trim()),
+        (q) => Boolean((q.question_id ?? "").trim()) && Boolean((q.answer_id ?? "").trim()),
       ).length;
 
       const qaComplete = pairs.length === 0 || qaDone === pairs.length;
@@ -193,12 +184,7 @@ function WorkspaceListPage() {
 
       if (titleDone && allCellsComplete && qaComplete) {
         status = "selesai";
-      } else if (
-        titleDone &&
-        nonBodyCellsComplete &&
-        qaComplete &&
-        bodyCellsRemaining > 0
-      ) {
+      } else if (titleDone && nonBodyCellsComplete && qaComplete && bodyCellsRemaining > 0) {
         status = "cell_belum";
       }
 
@@ -260,13 +246,11 @@ function WorkspaceListPage() {
       if (validationFilter === "validated" && !progress.validated) return false;
       if (validationFilter === "not_validated" && progress.validated) return false;
 
-      const cellsComplete =
-        progress.cellsTotal === 0 || progress.cellsDone === progress.cellsTotal;
+      const cellsComplete = progress.cellsTotal === 0 || progress.cellsDone === progress.cellsTotal;
       if (cellProgressFilter === "complete" && !cellsComplete) return false;
       if (cellProgressFilter === "incomplete" && cellsComplete) return false;
 
-      const qaComplete =
-        progress.qaTotal === 0 || progress.qaDone === progress.qaTotal;
+      const qaComplete = progress.qaTotal === 0 || progress.qaDone === progress.qaTotal;
       if (qaProgressFilter === "complete" && !qaComplete) return false;
       if (qaProgressFilter === "incomplete" && qaComplete) return false;
 
@@ -289,8 +273,7 @@ function WorkspaceListPage() {
           break;
         case "batch":
           result =
-            (a.batch_no ?? Number.MAX_SAFE_INTEGER) -
-            (b.batch_no ?? Number.MAX_SAFE_INTEGER);
+            (a.batch_no ?? Number.MAX_SAFE_INTEGER) - (b.batch_no ?? Number.MAX_SAFE_INTEGER);
           break;
         case "pilot":
           result = Number(Boolean(a.is_pilot)) - Number(Boolean(b.is_pilot));
@@ -305,9 +288,7 @@ function WorkspaceListPage() {
           result = statusRank[pa.status] - statusRank[pb.status];
           break;
         case "cells": {
-          const ratioDiff =
-            ratio(pa.cellsDone, pa.cellsTotal) -
-            ratio(pb.cellsDone, pb.cellsTotal);
+          const ratioDiff = ratio(pa.cellsDone, pa.cellsTotal) - ratio(pb.cellsDone, pb.cellsTotal);
           result =
             ratioDiff !== 0
               ? ratioDiff
@@ -315,12 +296,8 @@ function WorkspaceListPage() {
           break;
         }
         case "qa": {
-          const ratioDiff =
-            ratio(pa.qaDone, pa.qaTotal) - ratio(pb.qaDone, pb.qaTotal);
-          result =
-            ratioDiff !== 0
-              ? ratioDiff
-              : pa.qaDone - pb.qaDone || pa.qaTotal - pb.qaTotal;
+          const ratioDiff = ratio(pa.qaDone, pa.qaTotal) - ratio(pb.qaDone, pb.qaTotal);
+          result = ratioDiff !== 0 ? ratioDiff : pa.qaDone - pb.qaDone || pa.qaTotal - pb.qaTotal;
           break;
         }
         case "body":
@@ -367,6 +344,34 @@ function WorkspaceListPage() {
     return sortDirection === "asc" ? "↑" : "↓";
   };
 
+  // Any change to the result set sends the user back to the first page.
+  useEffect(() => {
+    setPage(0);
+  }, [
+    search,
+    batchFilter,
+    pilotMode,
+    statusFilter,
+    validationFilter,
+    cellProgressFilter,
+    qaProgressFilter,
+    sortKey,
+    sortDirection,
+  ]);
+
+  const pageCount = Math.max(1, Math.ceil(visibleTables.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const pageTables = visibleTables.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+
+  const extraFilterCount = [
+    batchFilter !== "",
+    pilotMode !== "all",
+    validationFilter !== "all",
+    cellProgressFilter !== "all",
+    qaProgressFilter !== "all",
+  ].filter(Boolean).length;
+  const anyFilterActive = extraFilterCount > 0 || search.trim() !== "" || statusFilter !== "all";
+
   const resetFilters = () => {
     setSearch("");
     setBatchFilter("");
@@ -381,9 +386,7 @@ function WorkspaceListPage() {
   if (rolesError) return <p role="alert">Gagal memuat peran.</p>;
   if (!allowed) {
     return (
-      <p role="alert">
-        Halaman ini hanya untuk pengguna yang dapat bertugas sebagai Anotator.
-      </p>
+      <p role="alert">Halaman ini hanya untuk pengguna yang dapat bertugas sebagai Anotator.</p>
     );
   }
   if (isLoading || !data) {
@@ -393,8 +396,18 @@ function WorkspaceListPage() {
     return <p role="alert">Gagal memuat ruang kerja: {error.message}</p>;
   }
 
-  const headerButtonClass =
-    "flex w-full items-center justify-between gap-1 text-left label-mono hover:text-ink";
+  const headerButtonClass = "flex w-full items-center gap-1 text-left label-mono hover:text-ink";
+  const selectClass =
+    "rounded-md bg-transparent px-2 py-1.5 text-sm ring-1 ring-line focus:outline-none focus:ring-ink/30";
+  const statusCount = (value: WorkStatus) =>
+    value === "all" ? assignedTables.length : statusCounts[value];
+  const sortHeader = (key: SortKey, label: string) => (
+    <button type="button" className={headerButtonClass} onClick={() => toggleSort(key)}>
+      <span>{label}</span>
+      <span className={sortKey === key ? "text-ink" : "text-mist/50"}>{sortArrow(key)}</span>
+    </button>
+  );
+  const percent = (done: number, total: number) => Math.round(ratio(done, total) * 100);
 
   return (
     <section>
@@ -403,147 +416,140 @@ function WorkspaceListPage() {
         title="Pilih tabel dataset"
         right={
           <div className="font-mono text-[11px] text-mist">
-            {visibleTables.length} / {assignedTables.length} tabel ditampilkan
+            {visibleTables.length} / {assignedTables.length} tabel · {statusCounts.validated}{" "}
+            divalidasi
           </div>
         }
       />
 
-      <div className="mb-4 grid gap-2 lg:grid-cols-4">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Cari kode / judul…"
-          className="rounded-lg bg-frost px-3 py-2 text-sm ring-1 ring-line"
+          className="min-w-[14rem] flex-1 rounded-md bg-transparent px-3 py-1.5 text-sm ring-1 ring-line focus:outline-none focus:ring-ink/30"
           aria-label="Cari tabel"
         />
-
-        <select
-          value={batchFilter}
-          onChange={(event) => setBatchFilter(event.target.value)}
-          className="rounded-lg bg-frost px-3 py-2 text-sm ring-1 ring-line"
-          aria-label="Filter batch"
-        >
-          <option value="">Semua batch</option>
-          {batchOptions.map((batch) => (
-            <option key={batch} value={batch}>Batch {batch}</option>
-          ))}
-        </select>
-
-        <select
-          value={pilotMode}
-          onChange={(event) => setPilotMode(event.target.value as PilotMode)}
-          className="rounded-lg bg-frost px-3 py-2 text-sm ring-1 ring-line"
-          aria-label="Filter pilot"
-        >
-          <option value="all">Pilot + non-pilot</option>
-          <option value="pilot">Pilot saja</option>
-          <option value="nonpilot">Non-pilot saja</option>
-        </select>
-
-        <select
-          value={statusFilter}
-          onChange={(event) => setStatusFilter(event.target.value as WorkStatus)}
-          className="rounded-lg bg-frost px-3 py-2 text-sm ring-1 ring-line"
-          aria-label="Filter status penyelesaian"
-        >
-          <option value="all">Semua status terjemahan</option>
-          <option value="selesai">Selesai ({statusCounts.selesai})</option>
-          <option value="cell_belum">
-            Terjemahan lama selesai, body cell belum ({statusCounts.cell_belum})
-          </option>
-          <option value="belum_selesai">
-            Belum selesai ({statusCounts.belum_selesai})
-          </option>
-        </select>
-
-        <select
-          value={validationFilter}
-          onChange={(event) =>
-            setValidationFilter(event.target.value as ValidationFilter)
-          }
-          className="rounded-lg bg-frost px-3 py-2 text-sm ring-1 ring-line"
-          aria-label="Filter validasi"
-        >
-          <option value="all">Semua status validasi</option>
-          <option value="validated">Sudah divalidasi ({statusCounts.validated})</option>
-          <option value="not_validated">Belum divalidasi</option>
-        </select>
-
-        <select
-          value={cellProgressFilter}
-          onChange={(event) =>
-            setCellProgressFilter(event.target.value as ProgressFilter)
-          }
-          className="rounded-lg bg-frost px-3 py-2 text-sm ring-1 ring-line"
-          aria-label="Filter progres header kolom"
-        >
-          <option value="all">Semua progres Header/kolom</option>
-          <option value="complete">Header/kolom lengkap</option>
-          <option value="incomplete">Header/kolom belum lengkap</option>
-        </select>
-
-        <select
-          value={qaProgressFilter}
-          onChange={(event) =>
-            setQaProgressFilter(event.target.value as ProgressFilter)
-          }
-          className="rounded-lg bg-frost px-3 py-2 text-sm ring-1 ring-line"
-          aria-label="Filter progres QA"
-        >
-          <option value="all">Semua progres QA</option>
-          <option value="complete">QA lengkap</option>
-          <option value="incomplete">QA belum lengkap</option>
-        </select>
-
         <button
           type="button"
-          onClick={resetFilters}
-          className="rounded-lg px-3 py-2 text-sm ring-1 ring-line hover:bg-ink/5"
+          onClick={() => setShowFilters((open) => !open)}
+          aria-expanded={showFilters}
+          className={`rounded-md px-3 py-1.5 text-sm ring-1 ring-line hover:bg-ink/5 ${showFilters ? "bg-ink/5" : ""}`}
         >
-          Reset filter
+          Filter
+          {extraFilterCount > 0 && (
+            <span className="ml-1 font-mono text-xs text-cyan">{extraFilterCount}</span>
+          )}
         </button>
+        {anyFilterActive && (
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="px-2 py-1.5 text-sm text-mist hover:text-ink"
+          >
+            Reset
+          </button>
+        )}
       </div>
 
-      <div className="mb-4 grid gap-2 sm:grid-cols-4">
-        <div className="rounded-lg bg-teal/10 px-3 py-2 ring-1 ring-teal/20">
-          <div className="font-mono text-[10px] uppercase text-mist">Selesai</div>
-          <div className="mt-1 text-lg font-semibold">{statusCounts.selesai}</div>
+      {showFilters && (
+        <div className="mb-3 flex flex-wrap gap-2">
+          <select
+            value={batchFilter}
+            onChange={(event) => setBatchFilter(event.target.value)}
+            className={selectClass}
+            aria-label="Filter batch"
+          >
+            <option value="">Semua batch</option>
+            {batchOptions.map((batch) => (
+              <option key={batch} value={batch}>
+                Batch {batch}
+              </option>
+            ))}
+          </select>
+          <select
+            value={pilotMode}
+            onChange={(event) => setPilotMode(event.target.value as PilotMode)}
+            className={selectClass}
+            aria-label="Filter pilot"
+          >
+            <option value="all">Pilot + non-pilot</option>
+            <option value="pilot">Pilot saja</option>
+            <option value="nonpilot">Non-pilot saja</option>
+          </select>
+          <select
+            value={validationFilter}
+            onChange={(event) => setValidationFilter(event.target.value as ValidationFilter)}
+            className={selectClass}
+            aria-label="Filter validasi"
+          >
+            <option value="all">Semua validasi</option>
+            <option value="validated">Sudah divalidasi ({statusCounts.validated})</option>
+            <option value="not_validated">Belum divalidasi</option>
+          </select>
+          <select
+            value={cellProgressFilter}
+            onChange={(event) => setCellProgressFilter(event.target.value as ProgressFilter)}
+            className={selectClass}
+            aria-label="Filter progres header kolom"
+          >
+            <option value="all">Semua Header/kolom</option>
+            <option value="complete">Header/kolom lengkap</option>
+            <option value="incomplete">Header/kolom belum lengkap</option>
+          </select>
+          <select
+            value={qaProgressFilter}
+            onChange={(event) => setQaProgressFilter(event.target.value as ProgressFilter)}
+            className={selectClass}
+            aria-label="Filter progres QA"
+          >
+            <option value="all">Semua QA</option>
+            <option value="complete">QA lengkap</option>
+            <option value="incomplete">QA belum lengkap</option>
+          </select>
         </div>
-        <div className="rounded-lg bg-amber/10 px-3 py-2 ring-1 ring-amber/20">
-          <div className="font-mono text-[10px] uppercase text-mist">
-            Terjemahan ada, body cell belum
-          </div>
-          <div className="mt-1 text-lg font-semibold">{statusCounts.cell_belum}</div>
-        </div>
-        <div className="rounded-lg bg-ink/5 px-3 py-2 ring-1 ring-line">
-          <div className="font-mono text-[10px] uppercase text-mist">Belum selesai</div>
-          <div className="mt-1 text-lg font-semibold">{statusCounts.belum_selesai}</div>
-        </div>
-        <div className="rounded-lg bg-cyan/10 px-3 py-2 ring-1 ring-cyan/20">
-          <div className="font-mono text-[10px] uppercase text-mist">Sudah divalidasi</div>
-          <div className="mt-1 text-lg font-semibold">{statusCounts.validated}</div>
-        </div>
-      </div>
+      )}
 
-      <p className="mb-3 text-xs text-mist">
-        Klik judul kolom untuk sorting. Header/kolom dan Pasangan QA diurutkan
-        berdasarkan persentase progres, lalu jumlah selesai sebagai tie-breaker.
-      </p>
+      <div
+        role="tablist"
+        aria-label="Filter status penyelesaian"
+        className="mb-3 flex flex-wrap gap-1 border-b border-line/70"
+      >
+        {STATUS_TABS.map((tab) => {
+          const active = statusFilter === tab.value;
+          return (
+            <button
+              key={tab.value}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setStatusFilter(tab.value)}
+              className={`-mb-px border-b-2 px-3 py-2 text-sm transition-colors ${active ? "border-ink text-ink" : "border-transparent text-mist hover:text-ink"}`}
+            >
+              {tab.label}
+              <span className="ml-1.5 font-mono text-xs text-mist">{statusCount(tab.value)}</span>
+            </button>
+          );
+        })}
+      </div>
 
       <div className="panel overflow-x-auto">
-        <div className="grid min-w-[1260px] grid-cols-[7rem_5rem_5rem_1fr_9rem_8rem_8rem_9rem_9rem] gap-3 border-b border-line/70 px-4 py-2">
-          <button className={headerButtonClass} onClick={() => toggleSort("code")}><span>Kode</span><span>{sortArrow("code")}</span></button>
-          <button className={headerButtonClass} onClick={() => toggleSort("batch")}><span>Batch</span><span>{sortArrow("batch")}</span></button>
-          <button className={headerButtonClass} onClick={() => toggleSort("pilot")}><span>Pilot</span><span>{sortArrow("pilot")}</span></button>
-          <button className={headerButtonClass} onClick={() => toggleSort("title")}><span>Judul sumber</span><span>{sortArrow("title")}</span></button>
-          <button className={headerButtonClass} onClick={() => toggleSort("status")}><span>Status</span><span>{sortArrow("status")}</span></button>
-          <button className={headerButtonClass} onClick={() => toggleSort("cells")}><span>Header/kolom</span><span>{sortArrow("cells")}</span></button>
-          <button className={headerButtonClass} onClick={() => toggleSort("qa")}><span>Pasangan QA</span><span>{sortArrow("qa")}</span></button>
-          <button className={headerButtonClass} onClick={() => toggleSort("body")}><span>Body tersisa</span><span>{sortArrow("body")}</span></button>
-          <button className={headerButtonClass} onClick={() => toggleSort("validation")}><span>Validasi</span><span>{sortArrow("validation")}</span></button>
+        <div
+          className={`${GRID_COLS} border-b border-line/70 py-2 pr-4`}
+          title="Header/kolom dan Pasangan QA diurutkan berdasarkan persentase progres, lalu jumlah selesai."
+        >
+          <div className="sticky left-0 z-10 bg-frost py-1 pl-4">{sortHeader("code", "Kode")}</div>
+          {sortHeader("batch", "Batch")}
+          {sortHeader("pilot", "Pilot")}
+          {sortHeader("title", "Judul sumber")}
+          {sortHeader("status", "Status")}
+          {sortHeader("cells", "Header/kolom")}
+          {sortHeader("qa", "QA")}
+          {sortHeader("body", "Body sisa")}
+          {sortHeader("validation", "Validasi")}
         </div>
 
-        {visibleTables.map((table) => {
+        {pageTables.map((table) => {
           const progress = tableProgress.get(table.id);
           if (!progress) return null;
 
@@ -552,52 +558,61 @@ function WorkspaceListPage() {
               key={table.id}
               to="/terjemahan/$tableId"
               params={{ tableId: table.id }}
-              className="grid min-w-[1260px] grid-cols-[7rem_5rem_5rem_1fr_9rem_8rem_8rem_9rem_9rem] items-center gap-3 border-b border-line/50 px-4 py-3 text-sm transition-colors last:border-b-0 hover:bg-ink/5"
+              className={`${GRID_COLS} group border-b border-line/40 py-2.5 pr-4 text-sm transition-colors last:border-b-0 hover:bg-ink/5`}
             >
-              <span className="font-mono text-xs text-cyan">{table.code}</span>
-              <span className="font-mono text-xs">{table.batch_no ?? "—"}</span>
-              <span>
+              <span
+                className="sticky left-0 z-10 truncate bg-frost py-1 pl-4 font-mono text-xs text-cyan group-hover:underline"
+                title={table.code}
+              >
+                {table.code}
+              </span>
+              <span className="font-mono text-xs text-mist">{table.batch_no ?? "—"}</span>
+              <span className="font-mono text-xs">
                 {table.is_pilot ? (
-                  <span className="rounded-full bg-amber/15 px-2 py-1 font-mono text-[10px] text-amber">Pilot</span>
+                  <span className="text-amber">Pilot</span>
                 ) : (
-                  <span className="text-xs text-mist">—</span>
+                  <span className="text-mist">—</span>
                 )}
               </span>
               <span className="min-w-0">
-                <span className="block truncate font-medium">{table.title_en}</span>
-                <span className="block truncate font-mono text-[11px] text-mist">
+                <span className="block truncate">{table.title_en}</span>
+                <span className="block truncate text-xs text-mist">
                   {table.title_id || "judul belum diterjemahkan"}
                 </span>
               </span>
-              <span>
-                {progress.status === "selesai" ? (
-                  <span className="rounded-full bg-teal/10 px-2 py-1 font-mono text-[10px] text-teal ring-1 ring-teal/20">Selesai</span>
-                ) : progress.status === "cell_belum" ? (
-                  <span className="rounded-full bg-amber/10 px-2 py-1 font-mono text-[10px] text-amber ring-1 ring-amber/20">Cell belum</span>
-                ) : (
-                  <span className="rounded-full px-2 py-1 font-mono text-[10px] text-mist ring-1 ring-line">Belum selesai</span>
-                )}
+              <span className="flex items-center gap-1.5 text-xs">
+                <span
+                  aria-hidden
+                  className={`size-1.5 shrink-0 rounded-full ${progress.status === "selesai" ? "bg-teal" : progress.status === "cell_belum" ? "bg-amber" : "bg-mist/50"}`}
+                />
+                {progress.status === "selesai"
+                  ? "Selesai"
+                  : progress.status === "cell_belum"
+                    ? "Cell belum"
+                    : "Belum selesai"}
               </span>
               <span className="font-mono text-xs">
                 {progress.cellsDone}/{progress.cellsTotal}
-                <span className="ml-1 text-[10px] text-mist">
-                  ({Math.round(ratio(progress.cellsDone, progress.cellsTotal) * 100)}%)
+                <span className="ml-1 text-mist">
+                  {percent(progress.cellsDone, progress.cellsTotal)}%
                 </span>
               </span>
               <span className="font-mono text-xs">
                 {progress.qaDone}/{progress.qaTotal}
-                <span className="ml-1 text-[10px] text-mist">
-                  ({Math.round(ratio(progress.qaDone, progress.qaTotal) * 100)}%)
+                <span className="ml-1 text-mist">
+                  {percent(progress.qaDone, progress.qaTotal)}%
                 </span>
               </span>
-              <span className={progress.bodyCellsRemaining > 0 ? "font-mono text-xs text-amber" : "font-mono text-xs text-mist"}>
+              <span
+                className={`font-mono text-xs ${progress.bodyCellsRemaining > 0 ? "text-amber" : "text-mist"}`}
+              >
                 {progress.bodyCellsRemaining}
               </span>
-              <span>
+              <span className="text-xs">
                 {progress.validated ? (
-                  <span className="rounded-full bg-cyan/10 px-2 py-1 font-mono text-[10px] text-cyan ring-1 ring-cyan/20">✓ Divalidasi</span>
+                  <span className="text-cyan">✓ Divalidasi</span>
                 ) : (
-                  <span className="rounded-full px-2 py-1 font-mono text-[10px] text-mist ring-1 ring-line">Belum</span>
+                  <span className="text-mist">—</span>
                 )}
               </span>
             </Link>
@@ -605,10 +620,39 @@ function WorkspaceListPage() {
         })}
 
         {!visibleTables.length && (
-          <div className="min-w-[1260px] px-4 py-8 text-center text-sm text-mist">
+          <div className="px-4 py-8 text-center text-sm text-mist">
             Tidak ada tabel yang cocok dengan filter saat ini.
           </div>
         )}
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-3 font-mono text-xs text-mist">
+        <span>
+          {visibleTables.length
+            ? `${currentPage * PAGE_SIZE + 1}–${Math.min((currentPage + 1) * PAGE_SIZE, visibleTables.length)} dari ${visibleTables.length}`
+            : "0 tabel"}
+        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={currentPage === 0}
+            onClick={() => setPage(currentPage - 1)}
+            className="rounded-md px-3 py-1.5 ring-1 ring-line hover:bg-ink/5 disabled:opacity-40"
+          >
+            ← Sebelumnya
+          </button>
+          <span>
+            {currentPage + 1} / {pageCount}
+          </span>
+          <button
+            type="button"
+            disabled={currentPage >= pageCount - 1}
+            onClick={() => setPage(currentPage + 1)}
+            className="rounded-md px-3 py-1.5 ring-1 ring-line hover:bg-ink/5 disabled:opacity-40"
+          >
+            Berikutnya →
+          </button>
+        </div>
       </div>
     </section>
   );
