@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -30,6 +30,41 @@ export const Route = createFileRoute("/_authenticated/terjemahan/$tableId")({
 });
 
 type CellDraft = Record<string, string>;
+
+// Enter moves focus to the next translation field ([data-nav]) in page order;
+// Shift+Enter keeps its newline in textareas. Tab already follows the same order
+// because the copy buttons are taken out of it.
+function focusNextField(event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) {
+  if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+  event.preventDefault();
+  const fields = Array.from(
+    document.querySelectorAll<HTMLElement>("[data-nav]:not([disabled])"),
+  );
+  fields[fields.indexOf(event.currentTarget) + 1]?.focus();
+}
+
+function CopyButton({
+  onCopy,
+  disabled,
+  children = "⧉ salin",
+}: {
+  onCopy: () => void;
+  disabled?: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      tabIndex={-1}
+      onClick={onCopy}
+      disabled={disabled}
+      title="Salin teks EN ke kolom terjemahan"
+      className="shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] text-mist ring-1 ring-line transition-colors hover:bg-ink/5 hover:text-ink disabled:opacity-40"
+    >
+      {children}
+    </button>
+  );
+}
 type PairDraft = Record<string, { question: string; answer: string }>;
 
 function TranslationWorkspace() {
@@ -44,6 +79,7 @@ function TranslationWorkspace() {
   const [activePair, setActivePair] = useState(0);
   const [showPreview, setShowPreview] = useState(true);
   const [activeTab, setActiveTab] = useState<"header" | "qa">("header");
+  const [showQaJson, setShowQaJson] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["tabel", tableId],
@@ -161,6 +197,21 @@ function TranslationWorkspace() {
   const pairDraft = pair ? (pairDrafts[pair.id] ?? { question: "", answer: "" }) : null;
   const tableCanEdit = data.table.annotate_flag === 1 && (isAdmin || data.table.annotator_id === userId);
   const pairCanEdit = !!pair && pair.annotate_flag === 1 && (isAdmin || pair.annotator_id === userId);
+  const emptyCellCount = data.cells.filter((c) => !(cellDrafts[c.id] ?? "").trim()).length;
+
+  // Fill only empty targets so existing translations are never overwritten.
+  const copyEmptyCells = () =>
+    setCellDrafts((prev) => {
+      const next = { ...prev };
+      for (const cell of data.cells) {
+        if (!(next[cell.id] ?? "").trim()) next[cell.id] = cell.source_text ?? "";
+      }
+      return next;
+    });
+  const setPairField = (field: "question" | "answer", value: string) => {
+    if (!pair || !pairDraft) return;
+    setPairDrafts((prev) => ({ ...prev, [pair.id]: { ...pairDraft, [field]: value } }));
+  };
 
   return (
     <section>
@@ -178,13 +229,16 @@ function TranslationWorkspace() {
       <div className="panel mb-4 p-4">
         <div className="label-mono mb-2">Judul tabel</div>
         <div className="grid gap-3 md:grid-cols-2">
-          <div className="rounded-lg bg-paper/60 px-3 py-2 font-mono text-xs">
-            {data.table.title_en}
+          <div className="flex items-start gap-2 rounded-lg bg-paper/60 px-3 py-2 font-mono text-xs">
+            <span className="flex-1">{data.table.title_en}</span>
+            <CopyButton disabled={!tableCanEdit} onCopy={() => setTitleDraft(data.table!.title_en ?? "")} />
           </div>
           <input
+            data-nav
             value={titleDraft}
             disabled={!tableCanEdit}
             onChange={(e) => setTitleDraft(e.target.value)}
+            onKeyDown={focusNextField}
             placeholder="Terjemahan judul (ID)"
             className="rounded-lg bg-frost px-3 py-2 text-sm ring-1 ring-line outline-none focus:ring-2 focus:ring-teal/50"
           />
@@ -238,18 +292,33 @@ function TranslationWorkspace() {
       <div className="panel mt-4 overflow-hidden">
         <div className="grid grid-cols-2 border-b border-line/70">
           <div className="label-mono border-r border-line/70 px-4 py-2">Sumber · EN</div>
-          <div className="label-mono px-4 py-2">Target · ID</div>
+          <div className="flex items-center gap-2 px-4 py-2">
+            <span className="label-mono">Target · ID</span>
+            <span className="ml-auto">
+              <CopyButton disabled={!tableCanEdit || emptyCellCount === 0} onCopy={copyEmptyCells}>
+                Salin EN → kosong ({emptyCellCount})
+              </CopyButton>
+            </span>
+          </div>
         </div>
         {data.cells.map((cell) => (
           <div key={cell.id} className="grid grid-cols-2 text-sm">
-            <div className="border-r border-b border-line/50 bg-paper/60 px-4 py-2.5">
-              <span className="font-mono text-xs">{cell.source_text}</span>
-              <span className="ml-2 font-mono text-[10px] text-mist uppercase">{cell.kind}</span>
+            <div className="flex items-start gap-2 border-r border-b border-line/50 bg-paper/60 px-4 py-2.5">
+              <span className="flex-1">
+                <span className="font-mono text-xs">{cell.source_text}</span>
+                <span className="ml-2 font-mono text-[10px] text-mist uppercase">{cell.kind}</span>
+              </span>
+              <CopyButton
+                disabled={!tableCanEdit}
+                onCopy={() => setCellDrafts((prev) => ({ ...prev, [cell.id]: cell.source_text ?? "" }))}
+              />
             </div>
             <div className="border-b border-line/50 px-2 py-1.5">
               <input
+                data-nav
                 value={cellDrafts[cell.id] ?? ""}
                 disabled={!tableCanEdit}
+                onKeyDown={focusNextField}
                 onChange={(e) =>
                   setCellDrafts((prev) => ({ ...prev, [cell.id]: e.target.value }))
                 }
@@ -261,6 +330,7 @@ function TranslationWorkspace() {
         ))}
         <div className="flex items-center gap-2 px-4 py-3">
           <button
+            data-nav
             onClick={() => saveCells.mutate()}
             disabled={saveCells.isPending || !tableCanEdit}
             className="rounded-lg bg-teal px-4 py-2 text-sm font-semibold text-primary-foreground ring-1 ring-teal/40 transition-colors hover:bg-teal/90 disabled:opacity-60"
@@ -288,19 +358,35 @@ function TranslationWorkspace() {
               </span>
             </div>
 
-            <div className="mb-2 font-mono text-[11px] text-mist">ID asli QA: {pair.original_question_id ?? "Belum diimpor"}</div>
+            <div className="mb-2 flex items-center gap-2 font-mono text-[11px] text-mist">
+              <span>ID asli QA: {pair.original_question_id ?? "Belum diimpor"}</span>
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={() => setShowQaJson((v) => !v)}
+                aria-expanded={showQaJson}
+                className="ml-auto rounded-lg px-3 py-1 ring-1 ring-line transition-colors hover:bg-ink/5"
+              >
+                {showQaJson ? "Sembunyikan JSON" : "Tampilkan JSON"}
+              </button>
+            </div>
+            {showQaJson && (
+              <pre className="mb-3 max-h-80 overflow-auto rounded-lg bg-paper/60 p-3 font-mono text-[11px] leading-relaxed ring-1 ring-line">
+                {pair.original_qa == null ? "JSON asli tidak tersedia." : JSON.stringify(pair.original_qa, null, 2)}
+              </pre>
+            )}
             <HiTabQaLogic original={pair.original_qa} />
             <div className="mb-1 mt-4 font-mono text-xs text-mist">Q · EN</div>
-            <div className="mb-3 text-sm">{pair.question_en}</div>
+            <div className="mb-3 flex items-start gap-2 text-sm">
+              <span className="flex-1">{pair.question_en}</span>
+              <CopyButton disabled={!pairCanEdit} onCopy={() => setPairField("question", pair.question_en ?? "")} />
+            </div>
             <div className="mb-1 font-mono text-xs text-mist">Q · ID</div>
             <textarea
+              data-nav
               value={pairDraft.question}
-              onChange={(e) =>
-                setPairDrafts((prev) => ({
-                  ...prev,
-                  [pair.id]: { ...pairDraft, question: e.target.value },
-                }))
-              }
+              onChange={(e) => setPairField("question", e.target.value)}
+              onKeyDown={focusNextField}
               rows={2}
               disabled={!pairCanEdit}
               placeholder="Terjemahan pertanyaan…"
@@ -308,16 +394,16 @@ function TranslationWorkspace() {
             />
 
             <div className="mb-1 font-mono text-xs text-mist">A · EN</div>
-            <div className="mb-3 text-sm">{pair.answer_en}</div>
+            <div className="mb-3 flex items-start gap-2 text-sm">
+              <span className="flex-1">{pair.answer_en}</span>
+              <CopyButton disabled={!pairCanEdit} onCopy={() => setPairField("answer", pair.answer_en ?? "")} />
+            </div>
             <div className="mb-1 font-mono text-xs text-mist">A · ID</div>
             <textarea
+              data-nav
               value={pairDraft.answer}
-              onChange={(e) =>
-                setPairDrafts((prev) => ({
-                  ...prev,
-                  [pair.id]: { ...pairDraft, answer: e.target.value },
-                }))
-              }
+              onChange={(e) => setPairField("answer", e.target.value)}
+              onKeyDown={focusNextField}
               rows={2}
               disabled={!pairCanEdit}
               placeholder="Terjemahan jawaban…"
@@ -326,6 +412,7 @@ function TranslationWorkspace() {
 
             <div className="flex items-center gap-2">
               <button
+                data-nav
                 onClick={() => savePair.mutate(pair.id)}
                 disabled={savePair.isPending || !pairCanEdit}
                 className="rounded-lg bg-teal px-4 py-2 text-sm font-semibold text-primary-foreground ring-1 ring-teal/40 transition-colors hover:bg-teal/90 disabled:opacity-60"
