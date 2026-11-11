@@ -258,8 +258,8 @@ function TranslationWorkspace() {
         {showPreview && (
           <div className="mt-3">
             <div className="grid gap-6 md:grid-cols-2">
-              <HiTabTablePreview snapshot={data.table.original_table} label="Tabel asli (EN)" />
-              <HiTabTablePreview snapshot={data.table.annotated_table} label="Tabel setelah anotasi (ID) · tersimpan" />
+              <HiTabTablePreview snapshot={data.table.original_table} label="Tabel asli (EN)" maxHeightClass="max-h-[75vh]" />
+              <HiTabTablePreview snapshot={data.table.annotated_table} label="Tabel setelah anotasi (ID) · tersimpan" maxHeightClass="max-h-[75vh]" />
             </div>
             <p className="mt-4 text-xs text-mist">Struktur hierarki dan merged regions berasal dari JSON asli; penyimpanan baru memperbarui snapshot terjemahan.</p>
           </div>

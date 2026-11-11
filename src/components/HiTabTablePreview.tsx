@@ -19,7 +19,12 @@ function asTable(value: Json | null | undefined): TableShape | null {
 function text(value: unknown) { return value === null || value === undefined ? "" : String(value); }
 
 /** Render source or translated HiTAB *matrix*, not a fabricated header/column layout. */
-export function HiTabTablePreview({ snapshot, label }: { snapshot: Json | null | undefined; label: string }) {
+export function HiTabTablePreview({ snapshot, label, maxHeightClass = "max-h-[26rem]" }: {
+  snapshot: Json | null | undefined;
+  label: string;
+  /** Tailwind max-height class for the scroll area. */
+  maxHeightClass?: string;
+}) {
   const table = asTable(snapshot);
   if (!table) return <p className="text-xs text-mist">JSON tabel belum tersedia; tidak membuat pratinjau palsu.</p>;
   const regions = new Map<string, Region>();
@@ -36,7 +41,7 @@ export function HiTabTablePreview({ snapshot, label }: { snapshot: Json | null |
   const left = table.left_header_columns_num ?? 0;
   return <div className="min-w-0">
     <div className="label-mono mb-2">{label}: {table.title ?? "Tanpa judul"}</div>
-    <div className="max-h-[26rem] overflow-auto rounded-lg ring-1 ring-line">
+    <div className={`${maxHeightClass} overflow-auto rounded-lg ring-1 ring-line`}>
       <table className="w-max min-w-full border-collapse text-xs">
         <tbody>{table.texts.map((row,r)=><tr key={r}>{row.map((value,c)=>{
           if (hidden.has(`${r}:${c}`)) return null;
