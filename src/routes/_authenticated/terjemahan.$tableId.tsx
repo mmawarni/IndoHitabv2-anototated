@@ -9,6 +9,7 @@ import { HiTabTablePreview } from "@/components/HiTabTablePreview";
 import { HiTabQaLogic } from "@/components/HiTabQaLogic";
 import { useWorkOpen } from "@/hooks/useWorkOpen";
 import { IncidentReportLink } from "@/components/IncidentReportLink";
+import { KendalaPanel } from "@/components/KendalaPanel";
 import { CopyButton, focusNextField } from "@/components/TranslationFields";
 
 export const Route = createFileRoute("/_authenticated/terjemahan/$tableId")({
@@ -45,7 +46,7 @@ function TranslationWorkspace() {
   const [pairDrafts, setPairDrafts] = useState<PairDraft>({});
   const [activePair, setActivePair] = useState(0);
   const [showPreview, setShowPreview] = useState(true);
-  const [activeTab, setActiveTab] = useState<"header" | "qa">("header");
+  const [activeTab, setActiveTab] = useState<"header" | "qa" | "kendala">("header");
 
   const { data, isLoading } = useQuery({
     queryKey: ["tabel", tableId],
@@ -252,6 +253,15 @@ function TranslationWorkspace() {
         >
           Pasangan tanya-jawab
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("kendala")}
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === "kendala" ? "border-b-2 border-teal text-teal" : "text-mist hover:text-ink"
+          }`}
+        >
+          Laporan Kendala
+        </button>
       </div>
 
       {activeTab === "header" && (
@@ -390,6 +400,17 @@ function TranslationWorkspace() {
         </div>
       )}
       </div>
+      )}
+
+      {activeTab === "kendala" && (
+        <div className="mt-4">
+          <KendalaPanel
+            tableId={tableId}
+            reporterRole={
+              isAdmin ? "admin" : data.table.annotator_id === userId || !isValidator ? "anotator" : "validator"
+            }
+          />
+        </div>
       )}
     </section>
   );

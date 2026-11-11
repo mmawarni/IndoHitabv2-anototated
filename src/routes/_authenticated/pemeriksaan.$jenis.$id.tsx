@@ -10,6 +10,7 @@ import { HiTabTablePreview } from "@/components/HiTabTablePreview";
 import { useWorkOpen } from "@/hooks/useWorkOpen";
 import { CopyButton, focusNextField } from "@/components/TranslationFields";
 import { QaReviewForm } from "@/components/QaReviewForm";
+import { KendalaPanel } from "@/components/KendalaPanel";
 
 export const Route = createFileRoute("/_authenticated/pemeriksaan/$jenis/$id")({
   head: () => ({ meta: [{ title: "Form Pemeriksaan — HiTab TQA" }] }),
@@ -82,7 +83,7 @@ function TableReview({ id }: { id: string }) {
   const [cells, setCells] = useState<CellCorrections>({});
   const [dirty, setDirty] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
-  const [activeTab, setActiveTab] = useState<"header" | "qa">("header");
+  const [activeTab, setActiveTab] = useState<"header" | "qa" | "kendala">("header");
   const [activePair, setActivePair] = useState(0);
 
   const { data, isPending, error } = useQuery({
@@ -207,6 +208,9 @@ function TableReview({ id }: { id: string }) {
         <button type="button" onClick={() => setActiveTab("qa")} className={tabClass(activeTab === "qa")}>
           Pasangan tanya-jawab <span className="font-mono text-xs text-mist">{data.pairIds.length}</span>
         </button>
+        <button type="button" onClick={() => setActiveTab("kendala")} className={tabClass(activeTab === "kendala")}>
+          Laporan Kendala
+        </button>
       </div>
 
       {activeTab === "header" && <div className="mt-4">
@@ -269,6 +273,10 @@ function TableReview({ id }: { id: string }) {
           </div>
           <QaReviewForm key={pairId} pairId={pairId} />
         </> : <div className="panel p-4 text-sm text-mist">Tabel ini belum memiliki pasangan tanya-jawab.</div>}
+      </div>}
+
+      {activeTab === "kendala" && <div className="mt-4">
+        <KendalaPanel tableId={id} reporterRole={isAdmin ? "admin" : "validator"} />
       </div>}
 
       <p className="mt-4 text-xs text-mist">Hasil validator disimpan terpisah dari terjemahan asli untuk menjaga jejak pemeriksaan.</p>

@@ -14,6 +14,47 @@ export type Database = {
   }
   public: {
     Tables: {
+      incident_reports: {
+        Row: {
+          id: string
+          table_id: string
+          qa_pair_id: string | null
+          reporter_id: string
+          reporter_role: string | null
+          category: string
+          issue_types: string[]
+          severity: string | null
+          location_note: string | null
+          description: string
+          suggestion: string | null
+          status: string
+          resolution_note: string | null
+          created_at: string
+          updated_at: string
+          resolved_at: string | null
+          resolved_by: string | null
+        }
+        Insert: {
+          id?: string
+          table_id: string
+          qa_pair_id?: string | null
+          reporter_id: string
+          reporter_role?: string | null
+          category?: string
+          issue_types?: string[]
+          severity?: string | null
+          location_note?: string | null
+          description: string
+          suggestion?: string | null
+          status?: string
+          resolution_note?: string | null
+        }
+        Update: {
+          status?: string
+          resolution_note?: string | null
+        }
+        Relationships: []
+      }
       table_reviews: {
         Row: {
           id: string

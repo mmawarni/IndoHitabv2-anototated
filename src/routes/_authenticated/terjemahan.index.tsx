@@ -97,6 +97,25 @@ function WorkspaceListPage() {
     },
   });
 
+  // Tables with Laporan Kendala notes; a flag only, it never changes completion status.
+  const kendalaFlags = useQuery({
+    queryKey: ["kendala-flags", userId],
+    enabled: allowed,
+    queryFn: async () => {
+      const counts = new Map<string, number>();
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await supabase
+          .from("incident_reports")
+          .select("table_id")
+          .order("id")
+          .range(from, from + 999);
+        if (error) throw error;
+        for (const row of data ?? []) counts.set(row.table_id, (counts.get(row.table_id) ?? 0) + 1);
+        if (!data || data.length < 1000) return counts;
+      }
+    },
+  });
+
   const batchOptions = useMemo(() => {
     if (!data) return [];
     return Array.from(
@@ -561,10 +580,18 @@ function WorkspaceListPage() {
               className={`${GRID_COLS} group border-b border-line/40 py-2.5 pr-4 text-sm transition-colors last:border-b-0 hover:bg-ink/5`}
             >
               <span
-                className="sticky left-0 z-10 truncate bg-frost py-1 pl-4 font-mono text-xs text-cyan group-hover:underline"
+                className="sticky left-0 z-10 flex min-w-0 items-center gap-1.5 bg-frost py-1 pl-4 font-mono text-xs text-cyan"
                 title={table.code}
               >
-                {table.code}
+                <span className="truncate group-hover:underline">{table.code}</span>
+                {!!kendalaFlags.data?.get(table.id) && (
+                  <span
+                    className="shrink-0 rounded-full bg-amber/15 px-1.5 py-0.5 text-[10px] text-amber"
+                    title={`${kendalaFlags.data.get(table.id)} catatan Laporan Kendala`}
+                  >
+                    ⚑ {kendalaFlags.data.get(table.id)}
+                  </span>
+                )}
               </span>
               <span className="font-mono text-xs text-mist">{table.batch_no ?? "—"}</span>
               <span className="font-mono text-xs">
