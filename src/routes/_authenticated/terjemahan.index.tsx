@@ -65,35 +65,23 @@ function WorkspaceListPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(0);
 
+  // Per-table progress is aggregated in the database (hitab_translation_workspace_v14):
+  // selecting every table_cells/qa_pairs row under RLS hits the statement timeout.
+  // "Done" follows the dashboard (hitab_dashboard_breakdown_v8). Rows come in pages
+  // of 1000 (the PostgREST cap); filtering and sorting stay client-side.
   const { data, isLoading, error } = useQuery({
-    queryKey: ["daftar-tabel-v11-sort-validation", userId],
+    queryKey: ["daftar-tabel", "v14", userId],
     enabled: allowed,
     queryFn: async () => {
-      const [tables, cells, qa] = await Promise.all([
-        supabase
-          .from("tqa_tables")
-          .select(
-            "id, code, title_en, title_id, annotate_flag, annotator_id, batch_no, is_pilot, validated_table",
-          )
-          .order("batch_no", { ascending: true, nullsFirst: false })
-          .order("code"),
-        supabase.from("table_cells").select("id, table_id, target_text, is_body_text"),
-        supabase
-          .from("qa_pairs")
-          .select(
-            "id, table_id, question_id, answer_id, validated_qa, annotate_flag, annotator_id",
-          ),
-      ]);
-
-      if (tables.error) throw tables.error;
-      if (cells.error) throw cells.error;
-      if (qa.error) throw qa.error;
-
-      return {
-        tables: tables.data ?? [],
-        cells: cells.data ?? [],
-        qa: qa.data ?? [],
-      };
+      const rows = [];
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await supabase
+          .rpc("hitab_translation_workspace_v14")
+          .range(from, from + 999);
+        if (error) throw error;
+        rows.push(...(data ?? []));
+        if (!data || data.length < 1000) return rows;
+      }
     },
   });
 
@@ -119,48 +107,11 @@ function WorkspaceListPage() {
   const batchOptions = useMemo(() => {
     if (!data) return [];
     return Array.from(
-      new Set(
-        data.tables.map((t) => t.batch_no).filter((value): value is number => value !== null),
-      ),
+      new Set(data.map((t) => t.batch_no).filter((value): value is number => value !== null)),
     ).sort((a, b) => a - b);
   }, [data]);
 
-  const qaByTable = useMemo(() => {
-    const map = new Map<string, NonNullable<typeof data>["qa"]>();
-    if (!data) return map;
-
-    for (const pair of data.qa) {
-      if (pair.annotate_flag !== 1) continue;
-      const current = map.get(pair.table_id) ?? [];
-      current.push(pair);
-      map.set(pair.table_id, current);
-    }
-    return map;
-  }, [data]);
-
-  const cellsByTable = useMemo(() => {
-    const map = new Map<string, NonNullable<typeof data>["cells"]>();
-    if (!data) return map;
-
-    for (const cell of data.cells) {
-      const current = map.get(cell.table_id) ?? [];
-      current.push(cell);
-      map.set(cell.table_id, current);
-    }
-    return map;
-  }, [data]);
-
-  const assignedTables = useMemo(() => {
-    if (!data) return [];
-
-    return data.tables.filter((table) => {
-      if (table.annotate_flag !== 1) return false;
-      if (isAdmin) return true;
-      if (table.annotator_id === userId) return true;
-
-      return (qaByTable.get(table.id) ?? []).some((q) => q.annotator_id === userId);
-    });
-  }, [data, isAdmin, userId, qaByTable]);
+  const assignedTables = useMemo(() => data ?? [], [data]);
 
   const tableProgress = useMemo(() => {
     const map = new Map<
@@ -178,49 +129,36 @@ function WorkspaceListPage() {
     >();
 
     for (const table of assignedTables) {
-      const cells = cellsByTable.get(table.id) ?? [];
-      const pairs = qaByTable.get(table.id) ?? [];
       const titleDone = Boolean((table.title_id ?? "").trim());
-
-      const cellsDone = cells.filter((cell) => Boolean((cell.target_text ?? "").trim())).length;
-
-      const bodyCellsRemaining = cells.filter(
-        (cell) => cell.is_body_text === true && !(cell.target_text ?? "").trim(),
-      ).length;
-
-      const nonBodyCellsComplete = cells
-        .filter((cell) => cell.is_body_text !== true)
-        .every((cell) => Boolean((cell.target_text ?? "").trim()));
-
-      const qaDone = pairs.filter(
-        (q) => Boolean((q.question_id ?? "").trim()) && Boolean((q.answer_id ?? "").trim()),
-      ).length;
-
-      const qaComplete = pairs.length === 0 || qaDone === pairs.length;
-      const allCellsComplete = cells.length === 0 || cellsDone === cells.length;
 
       let status: Exclude<WorkStatus, "all"> = "belum_selesai";
 
-      if (titleDone && allCellsComplete && qaComplete) {
+      // Same as the dashboard's "Tabel selesai": title, at least one cell, every cell
+      // filled. QA progress has its own column and filter.
+      if (titleDone && table.cells_total > 0 && table.cells_done === table.cells_total) {
         status = "selesai";
-      } else if (titleDone && nonBodyCellsComplete && qaComplete && bodyCellsRemaining > 0) {
+      } else if (
+        titleDone &&
+        table.non_body_cells_remaining === 0 &&
+        table.body_cells_remaining > 0
+      ) {
         status = "cell_belum";
       }
 
       map.set(table.id, {
-        cellsDone,
-        cellsTotal: cells.length,
-        bodyCellsRemaining,
-        qaDone,
-        qaTotal: pairs.length,
+        cellsDone: table.cells_done,
+        cellsTotal: table.cells_total,
+        bodyCellsRemaining: table.body_cells_remaining,
+        qaDone: table.qa_done,
+        qaTotal: table.qa_total,
         titleDone,
-        validated: table.validated_table !== null,
+        validated: table.validated,
         status,
       });
     }
 
     return map;
-  }, [assignedTables, cellsByTable, qaByTable]);
+  }, [assignedTables]);
 
   const statusCounts = useMemo(() => {
     const result = {

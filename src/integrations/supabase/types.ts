@@ -464,6 +464,24 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: { batch_no: number }[]
       }
+      hitab_translation_workspace_v14: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          id: string
+          code: string
+          title_en: string
+          title_id: string | null
+          batch_no: number | null
+          is_pilot: boolean
+          validated: boolean
+          cells_total: number
+          cells_done: number
+          body_cells_remaining: number
+          non_body_cells_remaining: number
+          qa_total: number
+          qa_done: number
+        }[]
+      }
       table_assignment_queue_v9: {
         Args: { _search?: string; _batch?: number | null; _pilot_mode?: string; _limit?: number; _offset?: number }
         Returns: {
